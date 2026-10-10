@@ -135,8 +135,10 @@ happens, not reconstructed at the end.
   environment. Your account verification is in progress. This may take up to two days for new
   accounts." Bedrock gave no such hint; every Amazon Nova model (Lite, Pro, Micro, 2 Lite) in the
   Sydney playground returned the same `ValidationException: Operation not allowed`.
-- **Workaround:** Wait for account verification (up to 48 hours). Development continues locally in
-  mock mode with no AWS calls. _Update with the time verification completed._
+- **Workaround:** Opened AWS Support case 179162884900471 (Account and billing; category "Account
+  Activation, Bedrock Allowlisting") on 2026-10-10 at 10:40 UTC. Waiting for verification (up to 48
+  hours). Development continues locally in mock mode with no AWS calls. _Update with the time
+  verification completed and how long support took._
 - **Related friction:** The console top bar showed only the account name ("Lift Off Soon"), with
   no visible Region selector, so it was unclear which Region the playground was using.
 - **Suggestion:** Bedrock should say what CloudShell says: return an `AccessDeniedException` with
