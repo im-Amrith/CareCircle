@@ -8,6 +8,7 @@ import type { Deps } from '../mcp/context.js';
 import { createCareCircleServer, SERVER_NAME, SERVER_VERSION } from '../mcp/server.js';
 import { devAuth, userOf } from './auth.js';
 import { MemoryEventStore } from './event-store.js';
+import { checkoutRouter } from './checkout.js';
 
 interface Session {
   transport: NodeStreamableHTTPServerTransport;
@@ -27,7 +28,12 @@ function rpcError(res: Response, status: number, code: number, message: string) 
  * Host and Origin validation come from createMcpExpressApp (403 on mismatch);
  * the transport rejects unsupported MCP-Protocol-Version headers with 400.
  */
-export function createHttpApp(config: Config, deps: Deps) {
+export function createHttpApp(config: Config, baseDeps: Deps) {
+  const deps: Deps = {
+    ...baseDeps,
+    publicUrl: baseDeps.publicUrl ?? config.publicUrl,
+    checkoutWatchers: baseDeps.checkoutWatchers ?? new Map()
+  };
   const app = createMcpExpressApp({
     host: config.host,
     ...(config.allowedHosts ? { allowedHosts: config.allowedHosts } : {}),
@@ -38,6 +44,9 @@ export function createHttpApp(config: Config, deps: Deps) {
   app.get('/healthz', (_req, res) => {
     res.json({ ok: true, name: SERVER_NAME, version: SERVER_VERSION, protocol: LATEST_PROTOCOL_VERSION, sessions: sessions.size });
   });
+
+  // Refill checkout pages. Not behind dev auth: the one-time link is the credential.
+  app.use(checkoutRouter(deps));
 
   app.use('/mcp', devAuth(config));
 

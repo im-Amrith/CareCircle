@@ -93,6 +93,31 @@ export interface WellbeingNote {
   loggedBy: string;
 }
 
+export type Fulfilment = 'delivery' | 'pickup';
+/** awaiting_checkout until the checkout page is completed; expired is derived from expiresAt. */
+export type OrderStatus = 'awaiting_checkout' | 'placed' | 'cancelled' | 'expired';
+
+export interface RefillOrder {
+  id: string;
+  familyId: string;
+  medicationId: string;
+  pharmacyId: string;
+  /** Pills ordered */
+  quantity: number;
+  fulfilment: Fulfilment;
+  status: OrderStatus;
+  requestedBy: string;
+  createdAt: string;
+  /** SHA-256 of the one-time checkout token. The token itself is never stored. */
+  checkoutTokenHash: string;
+  /** ISO instant after which the checkout link stops working */
+  expiresAt: string;
+  placedAt?: string;
+  /** Family-local date the pharmacy should deliver or have it ready */
+  readyOn?: string;
+  cancelledAt?: string;
+}
+
 export interface CareStore {
   getMember(userId: string): Promise<Member | undefined>;
   getFamily(familyId: string): Promise<Family | undefined>;
@@ -107,4 +132,13 @@ export interface CareStore {
   listVisits(familyId: string, fromDate: string, toDate: string): Promise<Visit[]>;
   listWellbeing(familyId: string, fromDate: string, toDate: string): Promise<WellbeingNote[]>;
   addWellbeing(note: WellbeingNote): Promise<void>;
+  listOrders(familyId: string): Promise<RefillOrder[]>;
+  addOrder(order: RefillOrder): Promise<void>;
+  getOrderByTokenHash(tokenHash: string): Promise<RefillOrder | undefined>;
+  /**
+   * Moves an order on only if it is still in status `from`, so two checkout
+   * submits (or a submit racing a cancel) can never both win. Returns the
+   * updated order, or undefined if it had already moved on.
+   */
+  transitionOrder(orderId: string, from: OrderStatus, patch: Partial<RefillOrder> & { status: OrderStatus }): Promise<RefillOrder | undefined>;
 }

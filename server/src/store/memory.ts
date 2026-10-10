@@ -4,7 +4,9 @@ import type {
   Family,
   Medication,
   Member,
+  OrderStatus,
   Pharmacy,
+  RefillOrder,
   Visit,
   WellbeingNote
 } from './types.js';
@@ -18,6 +20,7 @@ export class MemoryStore implements CareStore {
   doseLogs: DoseLog[] = [];
   visits: Visit[] = [];
   wellbeing: WellbeingNote[] = [];
+  orders: RefillOrder[] = [];
 
   async getMember(userId: string) {
     return this.members.get(userId);
@@ -73,5 +76,24 @@ export class MemoryStore implements CareStore {
 
   async addWellbeing(note: WellbeingNote) {
     this.wellbeing.push(note);
+  }
+
+  async listOrders(familyId: string) {
+    return this.orders.filter(o => o.familyId === familyId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async addOrder(order: RefillOrder) {
+    this.orders.push(order);
+  }
+
+  async getOrderByTokenHash(tokenHash: string) {
+    return this.orders.find(o => o.checkoutTokenHash === tokenHash);
+  }
+
+  async transitionOrder(orderId: string, from: OrderStatus, patch: Partial<RefillOrder> & { status: OrderStatus }) {
+    const order = this.orders.find(o => o.id === orderId);
+    if (!order || order.status !== from) return undefined;
+    Object.assign(order, patch);
+    return order;
   }
 }

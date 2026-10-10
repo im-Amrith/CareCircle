@@ -16,7 +16,7 @@ describe('MCP surface', () => {
     expect(c.getServerVersion()?.name).toBe('carecircle-mcp');
     expect(c.getInstructions()).toContain('never gives medical advice');
     const { tools } = await c.listTools();
-    expect(tools.map(t => t.name).sort()).toEqual(['check_refills', 'get_care_status', 'list_medications', 'log_medication', 'log_wellbeing']);
+    expect(tools.map(t => t.name).sort()).toEqual(['check_refills', 'get_care_status', 'list_medications', 'log_medication', 'log_wellbeing', 'request_refill']);
     for (const t of tools) {
       expect(t.description?.length).toBeGreaterThan(40);
       expect(t.outputSchema).toBeDefined();
