@@ -131,8 +131,12 @@ happens, not reconstructed at the end.
   re:Post threads with the same error point to an account-level restriction that only AWS Support
   can lift.
 - **Severity:** Blocker (no model calls possible until resolved)
-- **Workaround:** _In progress:_ checked region and quotas; opened an "Account and billing"
-  support case; continuing development in mock mode meanwhile.
+- **Workaround:** _In progress:_ (1) retry in us-east-1, since the console's region selector was not
+  visible and the playground may have been in another Region; (2) check the account plan (Free vs
+  Paid) under Billing; (3) if still blocked, open a free "Account and billing" support case.
+  Development continues in mock mode meanwhile. _Update this entry with the outcome._
+- **Related friction:** The console top bar showed only the account name ("Lift Off Soon"), with
+  no visible Region selector, so it was unclear which Region the playground was using.
 - **Suggestion:** Return an `AccessDeniedException` with a reason (e.g. "account not yet enabled
   for Bedrock, contact Support") instead of a `ValidationException`, and show the fix as a link in
   the playground banner.
