@@ -131,15 +131,18 @@ happens, not reconstructed at the end.
   re:Post threads with the same error point to an account-level restriction that only AWS Support
   can lift.
 - **Severity:** Blocker (no model calls possible until resolved)
-- **Workaround:** _In progress:_ (1) retried in us-east-1: blocked, the account is a project
-  account locked to ap-southeast-2 (see FL-08); retry Nova models in Sydney; (2) check the account plan (Free vs
-  Paid) under Billing; (3) if still blocked, open a free "Account and billing" support case.
-  Development continues in mock mode meanwhile. _Update this entry with the outcome._
+- **Root cause (found later):** AWS CloudShell in ap-southeast-2 showed "Unable to create the
+  environment. Your account verification is in progress. This may take up to two days for new
+  accounts." Bedrock gave no such hint; every Amazon Nova model (Lite, Pro, Micro, 2 Lite) in the
+  Sydney playground returned the same `ValidationException: Operation not allowed`.
+- **Workaround:** Wait for account verification (up to 48 hours). Development continues locally in
+  mock mode with no AWS calls. _Update with the time verification completed._
 - **Related friction:** The console top bar showed only the account name ("Lift Off Soon"), with
   no visible Region selector, so it was unclear which Region the playground was using.
-- **Suggestion:** Return an `AccessDeniedException` with a reason (e.g. "account not yet enabled
-  for Bedrock, contact Support") instead of a `ValidationException`, and show the fix as a link in
-  the playground banner.
+- **Suggestion:** Bedrock should say what CloudShell says: return an `AccessDeniedException` with
+  "account verification in progress, up to 48 hours" instead of a generic `ValidationException`, and
+  show it as a banner on the Bedrock console home. For the hackathon, warn participants to create
+  their AWS account early because new-account verification can block Bedrock for up to two days.
 
 ## FL-08: Project account is locked to Sydney; us-east-1 and Anthropic models blocked by SCP
 
