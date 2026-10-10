@@ -1,0 +1,89 @@
+{
+  "$comment": "Synthetic demo family. No real people or patient data. Dates are relative to 'today' in the family's timezone (dayOffset 0 = today, -1 = yesterday) so the demo always has fresh history.",
+  "family": {
+    "id": "fam-rose",
+    "name": "Rose's CareCircle",
+    "timezone": "Asia/Kolkata",
+    "locale": "en-IN",
+    "recipientId": "rose"
+  },
+  "members": [
+    { "id": "rose", "name": "Rose", "role": "recipient", "relation": "self", "pronoun": "she" },
+    { "id": "sam", "name": "Sam", "role": "coordinator", "relation": "son", "pronoun": "he" },
+    { "id": "maya", "name": "Maya", "role": "helper", "relation": "daughter", "pronoun": "she" }
+  ],
+  "slots": {
+    "morning": "08:00",
+    "noon": "13:00",
+    "evening": "20:00",
+    "night": "22:00"
+  },
+  "pharmacies": [
+    { "id": "riverside", "name": "Riverside Pharmacy", "pickup": true, "delivery": true }
+  ],
+  "medications": [
+    {
+      "id": "med-metformin",
+      "name": "Metformin",
+      "strength": "500 mg",
+      "form": "tablet",
+      "purpose": "blood sugar",
+      "aliases": ["metformin", "sugar", "diabetes", "sugar tablet"],
+      "schedule": [
+        { "slot": "morning", "pills": 1, "instructions": "after breakfast" },
+        { "slot": "evening", "pills": 1, "instructions": "after dinner" }
+      ],
+      "pillsOnHand": 46,
+      "pharmacyId": "riverside"
+    },
+    {
+      "id": "med-vitd",
+      "name": "Vitamin D3",
+      "strength": "1000 IU",
+      "form": "tablet",
+      "purpose": "bone health",
+      "aliases": ["vitamin d", "vitamin", "vit d", "sunshine pill"],
+      "schedule": [{ "slot": "morning", "pills": 1, "instructions": "after breakfast" }],
+      "pillsOnHand": 60,
+      "pharmacyId": "riverside"
+    },
+    {
+      "id": "med-amlodipine",
+      "name": "Amlodipine",
+      "strength": "5 mg",
+      "form": "tablet",
+      "purpose": "blood pressure",
+      "aliases": ["amlodipine", "blood pressure", "bp", "pressure tablet"],
+      "schedule": [{ "slot": "evening", "pills": 1, "instructions": "with water" }],
+      "pillsOnHand": 3,
+      "pharmacyId": "riverside"
+    },
+    {
+      "id": "med-atorvastatin",
+      "name": "Atorvastatin",
+      "strength": "10 mg",
+      "form": "tablet",
+      "purpose": "cholesterol",
+      "aliases": ["atorvastatin", "cholesterol", "statin"],
+      "schedule": [{ "slot": "night", "pills": 1, "instructions": "at bedtime" }],
+      "pillsOnHand": 25,
+      "pharmacyId": "riverside"
+    }
+  ],
+  "history": {
+    "days": 14,
+    "loggedBy": "rose",
+    "minutesAfterSlot": [5, 40],
+    "missed": [
+      { "dayOffset": -3, "medicationId": "med-amlodipine", "slot": "evening" },
+      { "dayOffset": -9, "medicationId": "med-atorvastatin", "slot": "night" }
+    ]
+  },
+  "visits": [
+    { "id": "visit-maya-today", "dayOffset": 0, "time": "16:00", "who": "maya", "purpose": "afternoon visit and grocery drop-off" }
+  ],
+  "wellbeing": [
+    { "dayOffset": -1, "time": "21:30", "note": "Said her knee was stiff after the walk.", "severity": "low", "loggedBy": "rose" },
+    { "dayOffset": 0, "time": "07:45", "note": "Slept badly last night.", "severity": "low", "loggedBy": "rose" }
+  ]
+}

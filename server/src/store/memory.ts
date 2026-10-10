@@ -1,0 +1,77 @@
+import type {
+  CareStore,
+  DoseLog,
+  Family,
+  Medication,
+  Member,
+  Pharmacy,
+  Visit,
+  WellbeingNote
+} from './types.js';
+
+/** In-memory store for local development, tests and judge runs (MOCK_AWS=1). */
+export class MemoryStore implements CareStore {
+  families = new Map<string, Family>();
+  members = new Map<string, Member>();
+  medications = new Map<string, Medication>();
+  pharmacies = new Map<string, Pharmacy>();
+  doseLogs: DoseLog[] = [];
+  visits: Visit[] = [];
+  wellbeing: WellbeingNote[] = [];
+
+  async getMember(userId: string) {
+    return this.members.get(userId);
+  }
+
+  async getFamily(familyId: string) {
+    return this.families.get(familyId);
+  }
+
+  async listMembers(familyId: string) {
+    return [...this.members.values()].filter(m => m.familyId === familyId);
+  }
+
+  async listMedications(familyId: string) {
+    return [...this.medications.values()].filter(m => m.familyId === familyId);
+  }
+
+  async getMedication(familyId: string, medicationId: string) {
+    const med = this.medications.get(medicationId);
+    return med && med.familyId === familyId ? med : undefined;
+  }
+
+  async adjustPills(familyId: string, medicationId: string, delta: number) {
+    const med = await this.getMedication(familyId, medicationId);
+    if (!med) throw new Error(`Unknown medication ${medicationId}`);
+    med.pillsOnHand = Math.max(0, med.pillsOnHand + delta);
+    return med;
+  }
+
+  async getPharmacy(pharmacyId: string) {
+    return this.pharmacies.get(pharmacyId);
+  }
+
+  async listDoseLogs(familyId: string, fromDate: string, toDate: string) {
+    return this.doseLogs.filter(l => l.familyId === familyId && l.date >= fromDate && l.date <= toDate);
+  }
+
+  async addDoseLog(log: DoseLog) {
+    this.doseLogs.push(log);
+  }
+
+  async listVisits(familyId: string, fromDate: string, toDate: string) {
+    return this.visits
+      .filter(v => v.familyId === familyId && v.date >= fromDate && v.date <= toDate)
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  }
+
+  async listWellbeing(familyId: string, fromDate: string, toDate: string) {
+    return this.wellbeing
+      .filter(n => n.familyId === familyId && n.date >= fromDate && n.date <= toDate)
+      .sort((a, b) => a.at.localeCompare(b.at));
+  }
+
+  async addWellbeing(note: WellbeingNote) {
+    this.wellbeing.push(note);
+  }
+}
