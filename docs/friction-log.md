@@ -131,8 +131,8 @@ happens, not reconstructed at the end.
   re:Post threads with the same error point to an account-level restriction that only AWS Support
   can lift.
 - **Severity:** Blocker (no model calls possible until resolved)
-- **Workaround:** _In progress:_ (1) retry in us-east-1, since the console's region selector was not
-  visible and the playground may have been in another Region; (2) check the account plan (Free vs
+- **Workaround:** _In progress:_ (1) retried in us-east-1: blocked, the account is a project
+  account locked to ap-southeast-2 (see FL-08); retry Nova models in Sydney; (2) check the account plan (Free vs
   Paid) under Billing; (3) if still blocked, open a free "Account and billing" support case.
   Development continues in mock mode meanwhile. _Update this entry with the outcome._
 - **Related friction:** The console top bar showed only the account name ("Lift Off Soon"), with
@@ -140,6 +140,30 @@ happens, not reconstructed at the end.
 - **Suggestion:** Return an `AccessDeniedException` with a reason (e.g. "account not yet enabled
   for Bedrock, contact Support") instead of a `ValidationException`, and show the fix as a link in
   the playground banner.
+
+## FL-08: Project account is locked to Sydney; us-east-1 and Anthropic models blocked by SCP
+
+- **Date:** 2026-10-10
+- **Area:** AWS account setup (project accounts) / Amazon Bedrock
+- **Task attempted:** Retry Nova Lite in the Bedrock playground in US East (N. Virginia) us-east-1,
+  the Region most tutorials and the hackathon samples assume.
+- **Steps taken:** Opened `https://us-east-1.console.aws.amazon.com/bedrock/home?region=us-east-1`
+  and the playground.
+- **Expected:** Playground loads in us-east-1.
+- **Actual:** Dialog "Region United States (N. Virginia) unavailable. Your project is assigned to
+  Asia Pacific (Sydney) ap-southeast-2. To access other commercial AWS Regions, activate advanced
+  features." A banner also showed `AccountFullAccessRole ... is not authorized to perform:
+  bedrock:GetUseCaseForModelAccess with an explicit deny in a service control policy`. The account
+  is a simplified "project" account, assigned to ap-southeast-2 because the contact address is in
+  India; the Region selector is hidden, which explains why it could not be found (see FL-07). The
+  SCP blocks the Anthropic first-time-use form, so Claude models cannot be enabled at all.
+- **Severity:** Major
+- **Workaround:** Build everything in ap-southeast-2 and use Amazon Nova models. Did not activate
+  advanced features until it's clear whether that changes billing or the hackathon credits.
+- **Suggestion:** Tell hackathon participants that new sign-ups may get a Region-locked project
+  account (Sydney for India) and list which Bedrock models and AgentCore features work there. Show
+  the assigned Region in the console top bar instead of hiding the Region selector, and explain the
+  SCP denial in plain words with the fix.
 
 ---
 
