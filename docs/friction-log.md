@@ -116,6 +116,27 @@ happens, not reconstructed at the end.
 - **Suggestion:** Add a "First call may take up to 15 minutes" notice in the playground, and explain
   on the console home when to use API keys vs. IAM credentials.
 
+## FL-07: Nova Lite returns "ValidationException: Operation not allowed" in the playground
+
+- **Date:** 2026-10-10
+- **Area:** Amazon Bedrock playground / account enablement
+- **Task attempted:** First call to Amazon Nova Lite in the Bedrock playground (Chat mode) to confirm
+  model access before writing any code.
+- **Steps taken:** Bedrock console → Test → Playground → Mode: Chat → model Nova Lite → prompt
+  "hello" → Run.
+- **Expected:** A reply from Nova Lite, since serverless models are documented as enabled by default
+  on first use.
+- **Actual:** Red banner `ValidationException: Operation not allowed`. No hint about the cause or
+  the fix. "ValidationException" suggests a bad request, but the prompt was a single word. AWS
+  re:Post threads with the same error point to an account-level restriction that only AWS Support
+  can lift.
+- **Severity:** Blocker (no model calls possible until resolved)
+- **Workaround:** _In progress:_ checked region and quotas; opened an "Account and billing"
+  support case; continuing development in mock mode meanwhile.
+- **Suggestion:** Return an `AccessDeniedException` with a reason (e.g. "account not yet enabled
+  for Bedrock, contact Support") instead of a `ValidationException`, and show the fix as a link in
+  the playground banner.
+
 ---
 
 ## Feature requests
