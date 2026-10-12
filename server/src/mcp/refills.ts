@@ -88,7 +88,7 @@ export function registerRefillTools(server: McpServer, deps: Deps): void {
     {
       title: 'Reorder a medicine',
       description:
-        "Start a refill of a medicine that is running low, from the family's pharmacy. Use for 'Reorder my blood pressure tablets', 'Order more Amlodipine', or when the user says yes after hearing a medicine runs low. With no medicine named, picks the one running out soonest. The user must agree first: if this returns needs_confirmation, ask the question it gives and only call again with confirm set to true after a clear yes. Nothing is ordered until checkout is completed on the secure checkout page. Asking twice never orders twice.",
+        "Start a refill of a medicine that is running low, from the family's pharmacy. Use for 'Reorder my blood pressure tablets', 'Order more Amlodipine', or when the user says yes after hearing a medicine runs low. With no medicine named, picks the one running out soonest. The user must agree first: clients with elicitation get a confirmation form every time; otherwise, if this returns needs_confirmation, ask the question it gives and only call again with confirm set to true after a clear yes. Nothing is ordered until checkout is completed on the secure checkout page. Asking twice never orders twice.",
       inputSchema: z.object({
         spoken_name: z.string().max(120).optional().describe("The medicine as the person said it, e.g. 'my blood pressure tablets'"),
         medication_id: z.string().optional().describe('Exact medication id, if already known'),
@@ -96,7 +96,7 @@ export function registerRefillTools(server: McpServer, deps: Deps): void {
         confirm: z
           .boolean()
           .default(false)
-          .describe('Set true only after the user has clearly said yes to the reorder question this tool asked')
+          .describe('Set true only after the user has clearly said yes to the reorder question this tool asked. Ignored when the client supports elicitation: the user is asked directly.')
       }),
       outputSchema: z.object({
         result: z.enum(['needs_confirmation', 'checkout_ready', 'already_ordered', 'declined', 'needs_clarification', 'not_found']),
@@ -164,15 +164,17 @@ export function registerRefillTools(server: McpServer, deps: Deps): void {
         );
       }
 
-      // 3. Ask first: an elicitation form if the client has one, otherwise a spoken question.
+      // 3. Ask first. A client with form elicitation always gets the form, even with
+      //    confirm=true: the person answers the server directly, so a model can't
+      //    supply the yes on their behalf. Voice-only clients ask aloud and send confirm.
       const quantity = refillQuantity(med);
       const left = supply(med, caller.local.date).daysLeft;
       const how = (f: Fulfilment) => (f === 'delivery' ? 'for delivery' : 'for pickup');
       const question = `Should I reorder ${label}, ${plural(quantity, med.form)}, from ${pharmacyName} ${how(fulfilment)}?`;
-      if (!confirm) {
-        const supports = elicitationSupport(server);
+      const canAsk = elicitationSupport(server).form;
+      if (canAsk || !confirm) {
         let answered = false;
-        if (supports.form) {
+        if (canAsk) {
           try {
             const reply = await ctx.mcpReq.elicitInput({
               mode: 'form',
@@ -204,7 +206,7 @@ export function registerRefillTools(server: McpServer, deps: Deps): void {
             console.warn('[carecircle] form elicitation failed, asking by voice instead', err);
           }
         }
-        if (!answered) {
+        if (!answered && !confirm) {
           return ok(
             { ...base, result: 'needs_confirmation' as const, question },
             `${med.name} has about ${plural(left, 'day')} left. ${question}`
