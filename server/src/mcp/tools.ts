@@ -14,6 +14,7 @@ import {
 } from '../domain/care.js';
 import { addDays, localParts, spokenDate, spokenTime, toMinutes } from '../domain/time.js';
 import { countWord, greeting, listJoin, plural, sentences } from '../domain/speech.js';
+import { OrderOut, openOrders, orderOut, orderSentence } from './refills.js';
 import { CareError, guarded, ok, requireRole, resolveCaller, subject, type Caller, type Deps } from './context.js';
 
 /* ---------- Shared schemas ---------- */
@@ -38,7 +39,8 @@ const SupplyOut = z.object({
   strength: z.string(),
   pillsOnHand: z.number(),
   daysLeft: z.number(),
-  runsOutOn: z.string()
+  runsOutOn: z.string(),
+  order: OrderOut.nullable().describe('An open refill order for this medicine, if one exists')
 });
 
 function doseOut(d: DoseState) {
@@ -144,6 +146,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
       const notes = await deps.store.listWellbeing(caller.family.id, addDays(day, -1), day);
       const latest = notes.at(-1);
       const alerts = refillAlerts(meds, caller.local.date);
+      const orders = await openOrders(deps, caller);
 
       const weekFrom = addDays(caller.local.date, -7);
       const weekTo = addDays(caller.local.date, -1);
@@ -196,6 +199,8 @@ export function registerTools(server: McpServer, deps: Deps): void {
       if (alerts.length) {
         const a = alerts[0];
         parts.push(`${a.name} runs low: about ${plural(a.daysLeft, 'day')} left.`);
+        const order = orders.get(a.medicationId);
+        if (order) parts.push(orderSentence(order, caller.now, caller.local.date));
       }
       if (detail === 'full') parts.push(`In the past week, ${plural(missedLast7Days, 'dose')} ${missedLast7Days === 1 ? 'was' : 'were'} missed.`);
 
@@ -210,7 +215,12 @@ export function registerTools(server: McpServer, deps: Deps): void {
           latestWellbeing: latest
             ? { note: latest.note, severity: latest.severity, date: latest.date, time: latest.time, redFlag: latest.redFlag }
             : null,
-          refillAlerts: alerts.map(supplyOut),
+          refillAlerts: await Promise.all(
+            alerts.map(async a => {
+              const order = orders.get(a.medicationId);
+              return { ...supplyOut(a), order: order ? await orderOut(deps, order, caller.now) : null };
+            })
+          ),
           missedLast7Days
         },
         sentences(...parts)
@@ -429,7 +439,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
     {
       title: 'Check medicine supply',
       description:
-        "Find medicines that will run out soon, with days of supply left and the date they run out. Use for 'Am I running low on anything?' or 'Does Mom need a refill?'. Read-only; does not order anything.",
+        "Find medicines that will run out soon, with days of supply left and the date they run out. Use for 'Am I running low on anything?' or 'Does Mom need a refill?'. Read-only; does not order anything (use request_refill for that).",
       inputSchema: z.object({
         within_days: z.number().int().min(1).max(60).default(DEFAULT_REFILL_WINDOW_DAYS).describe('Flag medicines with this many days or fewer left')
       }),
@@ -442,12 +452,19 @@ export function registerTools(server: McpServer, deps: Deps): void {
     guarded(async ({ within_days }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
       const meds = await deps.store.listMedications(caller.family.id);
+      const orders = await openOrders(deps, caller);
       const alerts = await Promise.all(
         refillAlerts(meds, caller.local.date, within_days).map(async s => {
           const ph = await deps.store.getPharmacy(s.pharmacyId);
-          return { ...supplyOut(s), pharmacy: { id: s.pharmacyId, name: ph?.name ?? 'the pharmacy' } };
+          const order = orders.get(s.medicationId);
+          return {
+            ...supplyOut(s),
+            order: order ? await orderOut(deps, order, caller.now) : null,
+            pharmacy: { id: s.pharmacyId, name: ph?.name ?? 'the pharmacy' }
+          };
         })
       );
+      const unordered = alerts.filter(a => !a.order);
       const whose = caller.isRecipient ? 'your' : `${caller.recipient.name}'s`;
       const speech = alerts.length
         ? sentences(
@@ -456,8 +473,12 @@ export function registerTools(server: McpServer, deps: Deps): void {
                 a.daysLeft === 0
                   ? `${a.name} ${a.strength} has run out or has less than a day left.`
                   : `${a.name} ${a.strength} has about ${plural(a.daysLeft, 'day')} left, enough until ${spokenDate(a.runsOutOn, caller.local.date)}.`
-            ),
-            `${alerts.length === 1 ? 'It comes' : 'They come'} from ${alerts[0].pharmacy.name}.`
+            ).flatMap((line, i) => {
+              const order = orders.get(alerts[i].medicationId);
+              return order ? [line, orderSentence(order, caller.now, caller.local.date)] : [line];
+            }),
+            unordered.length > 0 &&
+              `${unordered.length === 1 ? 'It comes' : 'They come'} from ${unordered[0].pharmacy.name}.${caller.member.role === 'helper' ? '' : ` Want me to reorder ${unordered.length === 1 ? 'it' : unordered[0].name}?`}`
           )
         : `All of ${whose} medicines have more than ${plural(within_days, 'day')} of supply.`;
       return ok({ withinDays: within_days, alerts }, speech);

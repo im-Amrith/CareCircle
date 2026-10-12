@@ -23,6 +23,8 @@ export interface Config {
   /** Freeze the clock for demos and tests (ISO instant) */
   fixedNow?: string;
   sessionIdleMinutes: number;
+  /** Public base URL for checkout links, e.g. https://carecircle.example.com. Defaults to the request's origin. */
+  publicUrl?: string;
 }
 
 function list(v: string | undefined): string[] | undefined {
@@ -40,7 +42,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     authMode: 'dev',
     defaultUser: env.CARECIRCLE_DEFAULT_USER ?? 'sam',
     fixedNow: env.CARECIRCLE_NOW || undefined,
-    sessionIdleMinutes: Number(env.SESSION_IDLE_MINUTES ?? 30)
+    sessionIdleMinutes: Number(env.SESSION_IDLE_MINUTES ?? 30),
+    publicUrl: env.PUBLIC_URL?.replace(/\/+$/, '') || undefined
   };
 }
 

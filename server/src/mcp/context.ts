@@ -9,6 +9,13 @@ export interface Deps {
   clock: Clock;
   /** Used when a request carries no identity (stdio, in-memory tests, dev mode without a token) */
   defaultUser: string;
+  /** Base URL for links the server hands out (checkout). Defaults to the origin the request came in on. */
+  publicUrl?: string;
+  /**
+   * Order id -> callback that sends `notifications/elicitation/complete` to the
+   * session that opened the checkout link. Set by request_refill, fired by the checkout page.
+   */
+  checkoutWatchers?: Map<string, () => Promise<void>>;
 }
 
 export interface Caller {

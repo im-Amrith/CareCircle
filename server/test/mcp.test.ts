@@ -16,7 +16,7 @@ describe('MCP surface', () => {
     expect(c.getServerVersion()?.name).toBe('carecircle-mcp');
     expect(c.getInstructions()).toContain('never gives medical advice');
     const { tools } = await c.listTools();
-    expect(tools.map(t => t.name).sort()).toEqual(['check_refills', 'get_care_status', 'list_medications', 'log_medication', 'log_wellbeing']);
+    expect(tools.map(t => t.name).sort()).toEqual(['check_refills', 'get_care_status', 'list_medications', 'log_medication', 'log_wellbeing', 'request_refill']);
     for (const t of tools) {
       expect(t.description?.length).toBeGreaterThan(40);
       expect(t.outputSchema).toBeDefined();
@@ -24,6 +24,23 @@ describe('MCP surface', () => {
     }
     expect(tools.find(t => t.name === 'get_care_status')?.annotations?.readOnlyHint).toBe(true);
     expect(tools.find(t => t.name === 'log_medication')?.annotations?.idempotentHint).toBe(true);
+    await c.close();
+  });
+
+  it('uses only single-type JSON Schema nodes, for portable tool schemas', async () => {
+    const c = await connect(srv.url, 'sam');
+    const { tools } = await c.listTools();
+    const arrayTypes: string[] = [];
+    const walk = (node: unknown, path: string) => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray((node as { type?: unknown }).type)) arrayTypes.push(path);
+      for (const [k, v] of Object.entries(node)) walk(v, `${path}.${k}`);
+    };
+    for (const t of tools) {
+      walk(t.inputSchema, `${t.name}.input`);
+      walk(t.outputSchema, `${t.name}.output`);
+    }
+    expect(arrayTypes).toEqual([]);
     await c.close();
   });
 

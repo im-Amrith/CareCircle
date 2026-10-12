@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { Client, StreamableHTTPClientTransport, type ClientCapabilities } from '@modelcontextprotocol/client';
 import { loadConfig, makeClock } from '../src/config.js';
 import { buildSeededStore, readSeedFile } from '../src/store/seed.js';
 import { createHttpApp } from '../src/http/app.js';
@@ -35,11 +35,12 @@ export async function startServer(nowIso = NINE_AM_IST) {
   };
 }
 
-export async function connect(url: string, user: string) {
+export async function connect(url: string, user: string, setup?: (client: Client) => void, capabilities?: ClientCapabilities) {
   const transport = new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers: { Authorization: `Bearer dev:${user}` } }
   });
-  const client = new Client({ name: 'carecircle-tests', version: '0.0.1' });
+  const client = new Client({ name: 'carecircle-tests', version: '0.0.1' }, capabilities ? { capabilities } : undefined);
+  setup?.(client);
   await client.connect(transport);
   return client;
 }
