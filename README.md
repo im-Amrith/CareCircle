@@ -83,7 +83,7 @@ How the checkout is secured:
 - Tokens are 256 random bits, single-use and valid for 15 minutes. Only a SHA-256 hash is stored.
 - Placing an order is a compare-and-set from `awaiting_checkout`. A double submit, or a submit racing a cancel, places at most one order.
 - Form posts must come from the page's own origin (`403` otherwise), on top of the app-wide Host and Origin checks.
-- Responses are sent with `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and a CSP that allows no scripts.
+- Responses are sent with `Cache-Control: no-store`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY` and a CSP that allows no scripts.
 - No card or payment details are ever collected: payment is settled with the pharmacy. In this demo no real order leaves the server.
 - Only the recipient and coordinators can start a refill; helpers get a spoken refusal.
 

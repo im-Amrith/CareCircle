@@ -105,7 +105,8 @@ describe('voice refill: "Reorder? Yes" then secure checkout', () => {
     expect(html).toContain('Riverside Pharmacy');
     expect(html).not.toMatch(/<script/i);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+    // no-referrer would make browsers post `Origin: null`, which is rejected.
+    expect(res.headers.get('referrer-policy')).toBe('same-origin');
     expect(res.headers.get('x-frame-options')).toBe('DENY');
     expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
   });
@@ -120,6 +121,13 @@ describe('voice refill: "Reorder? Yes" then secure checkout', () => {
       body: 'action=place&fulfilment=delivery'
     });
     expect(crossSite.status).toBe(403);
+    const opaque = await fetch(checkoutUrl, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: 'null' },
+      body: 'action=place'
+    });
+    expect(opaque.status).toBe(403);
     expect(srv.store.orders[0].status).toBe('awaiting_checkout');
   });
 

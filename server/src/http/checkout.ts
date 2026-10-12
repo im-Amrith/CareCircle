@@ -10,7 +10,7 @@ import { localParts, spokenDate } from '../domain/time.js';
  * shows the order, POST places or cancels it.
  *
  * - The token is 256 random bits, single-use and short-lived; only its hash is stored.
- * - Nothing is cached or leaked: no-store, no-referrer, no framing, a CSP with
+ * - Nothing is cached or leaked: no-store, same-origin referrers only, no framing, a CSP with
  *   no scripts at all, and form posts only to this same page.
  * - Placing is a compare-and-set from awaiting_checkout, so a double submit or a
  *   submit racing a cancel places at most one order.
@@ -168,7 +168,10 @@ function page(res: Response, status: number, title: string, body: string) {
     .set({
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
-      'Referrer-Policy': 'no-referrer',
+      // same-origin, not no-referrer: under no-referrer browsers send `Origin: null` on the
+      // form post, which the Origin checks reject. same-origin still never leaks the
+      // token-bearing URL to other sites.
+      'Referrer-Policy': 'same-origin',
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Content-Security-Policy': `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`
