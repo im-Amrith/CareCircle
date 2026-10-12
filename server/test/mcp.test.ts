@@ -161,3 +161,16 @@ describe('demo journeys at 9 am', () => {
     await stranger.close();
   });
 });
+
+describe('spoken notes', () => {
+  it('keeps "I" capitalised when quoting a first-person note', async () => {
+    const own = await startServer();
+    const rose = await connect(own.url, 'rose');
+    await call(rose, 'log_wellbeing', { note: 'I had a fall in the kitchen' });
+    const sam = await connect(own.url, 'sam');
+    expect(said(await call(sam, 'get_care_status'))).toContain('She mentioned: I had a fall in the kitchen.');
+    await rose.close();
+    await sam.close();
+    await own.stop();
+  });
+});
