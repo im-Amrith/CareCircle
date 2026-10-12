@@ -101,8 +101,10 @@ export function registerRefillTools(server: McpServer, deps: Deps): void {
       outputSchema: z.object({
         result: z.enum(['needs_confirmation', 'checkout_ready', 'already_ordered', 'declined', 'needs_clarification', 'not_found']),
         order: OrderOut.nullable(),
-        checkoutUrl: z.string().nullable().describe('One-time secure checkout link. Show it on screen; never read it aloud.'),
-        question: z.string().nullable(),
+        // Optional rather than nullable: Zod emits nullable strings as `type: ["string", "null"]`,
+        // which single-type schema dialects (e.g. Gemini's OpenAPI subset) reject.
+        checkoutUrl: z.string().optional().describe('One-time secure checkout link, when result is checkout_ready. Show it on screen; never read it aloud.'),
+        question: z.string().optional().describe('The question to ask, when result is needs_confirmation'),
         options: z.array(z.object({ id: z.string(), name: z.string(), purpose: z.string() }))
       }),
       annotations: { title: 'Reorder a medicine', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }
@@ -111,7 +113,7 @@ export function registerRefillTools(server: McpServer, deps: Deps): void {
       const caller = await resolveCaller(ctx, deps);
       requireRole(caller, ['recipient', 'coordinator'], 'order refills');
       const meds = await deps.store.listMedications(caller.family.id);
-      const base = { order: null, checkoutUrl: null, question: null, options: [] };
+      const base = { order: null, options: [] };
       const optionsOf = (list: Medication[]) => list.map(m => ({ id: m.id, name: m.name, purpose: m.purpose }));
 
       // 1. Which medicine.
