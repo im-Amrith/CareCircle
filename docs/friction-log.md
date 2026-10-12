@@ -130,15 +130,18 @@ happens, not reconstructed at the end.
   the fix. "ValidationException" suggests a bad request, but the prompt was a single word. AWS
   re:Post threads with the same error point to an account-level restriction that only AWS Support
   can lift.
-- **Severity:** Blocker (no model calls possible until resolved)
+- **Severity:** Blocker for two days (no model calls possible until resolved)
 - **Root cause (found later):** AWS CloudShell in ap-southeast-2 showed "Unable to create the
   environment. Your account verification is in progress. This may take up to two days for new
   accounts." Bedrock gave no such hint; every Amazon Nova model (Lite, Pro, Micro, 2 Lite) in the
   Sydney playground returned the same `ValidationException: Operation not allowed`.
 - **Workaround:** Opened AWS Support case 179162884900471 (Account and billing; category "Account
   Activation, Bedrock Allowlisting") on 2026-10-10 at 10:40 UTC. Waiting for verification (up to 48
-  hours). Development continues locally in mock mode with no AWS calls. _Update with the time
-  verification completed and how long support took._
+  hours). Development continued locally in mock mode with no AWS calls.
+- **Resolved:** 2026-10-12, about 48 hours after account creation. Amazon Nova 2 Lite now answers
+  in the Sydney (ap-southeast-2) playground (97 input / 344 output tokens, 2.3 s latency on the
+  first call). No change was needed on our side; verification completing was the fix. The
+  `ValidationException` cost roughly half a day of debugging before CloudShell revealed the cause.
 - **Related friction:** The console top bar showed only the account name ("Lift Off Soon"), with
   no visible Region selector, so it was unclear which Region the playground was using.
 - **Suggestion:** Bedrock should say what CloudShell says: return an `AccessDeniedException` with
