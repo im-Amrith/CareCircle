@@ -1,0 +1,27 @@
+[project]
+name = "carecircle-sim"
+version = "0.1.0"
+description = "CareCircle Alexa+ simulator orchestrator: MCP client, Strands agent on Amazon Bedrock, Polly speech"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  # strands-agents 1.59 pins mcp<2.2, so the MCP Python SDK resolves to 2.1.x.
+  "strands-agents>=1.59,<2",
+  "boto3>=1.43",
+  "fastapi>=0.143",
+  "uvicorn>=0.54",
+  "httpx>=0.28",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["carecircle_sim"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

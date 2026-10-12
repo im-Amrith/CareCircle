@@ -3,3 +3,7 @@ dist/
 coverage/
 .env
 .DS_Store
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
