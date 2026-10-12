@@ -173,6 +173,55 @@ happens, not reconstructed at the end.
   the assigned Region in the console top bar instead of hiding the Region selector, and explain the
   SCP denial in plain words with the fix.
 
+## FL-09: Strands Agents pins the MCP Python SDK below the current release
+
+- **Date:** 2026-10-12
+- **Area:** Strands Agents (`strands-agents` on PyPI)
+- **Task attempted:** Build the simulator orchestrator as an MCP client with the latest MCP Python SDK
+  and give its tools to a Strands agent on Bedrock.
+- **Steps taken:** `pip install strands-agents mcp boto3` on Python 3.12 (Windows 11).
+  PyPI listed `strands-agents` 1.59.0 and `mcp` 2.3.0.
+- **Expected:** The latest `mcp` (2.3.0) installed alongside Strands.
+- **Actual:** pip resolved `mcp` 2.1.1, because `strands-agents` 1.59.0 requires `mcp<2.2,>=1.23.0`.
+  Nothing warns about this: you only notice by comparing `pip list` against PyPI. The 2.1.1 client
+  also opens every session with a `server/discover` request for protocol revision 2026-07-28,
+  before `initialize`. A server that speaks only 2025-11-25 answers it with HTTP 400, and the
+  client then falls back to `initialize`. It works, but the failed probe shows up in our protocol
+  log on every connect.
+- **Severity:** Minor
+- **Workaround:** Accept `mcp` 2.1.1 (form and URL elicitation both work through
+  `MCPClient(elicitation_callback=...)`), and label the probe in the simulator's protocol panel as a
+  version probe that falls back to `initialize`.
+- **Suggestion:** Note the supported `mcp` range in the Strands MCP docs and release notes, and
+  widen the upper bound soon after each MCP SDK minor release. Add an option to skip the
+  `server/discover` probe, or document it, when the target server is known to speak 2025-11-25.
+
+## FL-10: Nova 2 Lite treated "Reorder it" as consent and skipped the server's confirmation
+
+- **Date:** 2026-10-12
+- **Area:** Amazon Bedrock (Amazon Nova 2 Lite, `global.amazon.nova-2-lite-v1:0`, ap-southeast-2)
+  with Strands Agents 1.59.0 tool use
+- **Task attempted:** Demo line "Is she running low on anything?" then "Reorder it" in the
+  simulator. The `request_refill` tool takes `confirm: true` only after a spoken yes; the tool
+  description and the system prompt both say so.
+- **Steps taken:** Ran the turn through a Strands agent on Nova 2 Lite and watched the JSON-RPC log.
+- **Expected:** The model calls `request_refill` without `confirm`, so the server asks the person to
+  confirm (form elicitation).
+- **Actual:** The model's first call was
+  `request_refill {"spoken_name": "Amlodipine 5 mg", "confirm": true}`. It read "Reorder it" as the
+  yes to its own earlier "Would you like me to reorder it?", so the server's confirmation form was
+  skipped. The checkout page still guarded the order, but the server was trusting a yes that came
+  from the model, not the person.
+- **Severity:** Major (changed the server design)
+- **Workaround:** The server no longer trusts `confirm` from clients that support elicitation: it
+  always asks the person through a form, and `confirm` only applies to voice clients without
+  elicitation. Added a server test for this case. Every model choice is still visible in the
+  protocol panel.
+- **Suggestion:** Add a "human confirmation for side-effecting tools" pattern to the Bedrock and
+  Strands tool-use docs. Recommend that the tool server (via MCP elicitation) or a Strands
+  interrupt, not a model-set boolean, should hold the yes for purchases and other irreversible
+  actions, and show Nova's behaviour with a `confirm`-style parameter as the example.
+
 ---
 
 ## Feature requests
