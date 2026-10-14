@@ -31,6 +31,13 @@ export interface ToolResult {
   uiResourceUri?: string;
 }
 
+export interface UiResource {
+  uri: string;
+  html: string;
+  csp: { connectDomains?: string[]; resourceDomains?: string[]; frameDomains?: string[]; baseUriDomains?: string[] };
+  prefersBorder?: boolean | null;
+}
+
 export interface JsonSchemaProp {
   type?: string;
   title?: string;
@@ -79,6 +86,8 @@ export interface Health {
   mcp: { reachable: boolean; url: string; protocol?: string; error?: string };
   brain: { mode: 'mock' | 'bedrock'; reason?: string; model?: string; region?: string };
   speech: { mode: 'polly' | 'browser'; voice: string | null; detail: string };
+  /** The MCP Apps sandbox proxy, on the orchestrator's own origin. */
+  sandboxUrl?: string;
 }
 
 async function errorText(res: Response): Promise<string> {
@@ -142,6 +151,24 @@ export async function fetchRpc(profile: ProfileId, after: number): Promise<RpcEn
   const res = await fetch(`/api/rpc?profile=${profile}&after=${after}`);
   if (!res.ok) return [];
   return (await res.json()).entries as RpcEntry[];
+}
+
+/** An MCP App view (`ui://` resource), read once per session by the orchestrator. */
+export async function fetchUiResource(profile: ProfileId, uri: string): Promise<UiResource> {
+  const res = await fetch(`/api/profiles/${profile}/ui-resource?uri=${encodeURIComponent(uri)}`);
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()) as UiResource;
+}
+
+/** A view's tools/call. The orchestrator refuses tools that aren't visible to apps. */
+export async function appToolCall(profile: ProfileId, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch(`/api/profiles/${profile}/app/tools/call`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, arguments: args })
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()) as Record<string, unknown>;
 }
 
 export async function fetchHealth(): Promise<Health | null> {

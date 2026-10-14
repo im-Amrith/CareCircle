@@ -326,16 +326,5 @@ export function ResultCard({ result, checkout }: { result: ToolResult; checkout?
       card = <Wellbeing s={s} />;
       break;
   }
-  return (
-    <>
-      {card}
-      {result.uiResourceUri && (
-        <Card title="Interactive view">
-          <p className="muted">
-            This tool offers an interactive view (<code>{result.uiResourceUri}</code>). MCP Apps rendering comes in a later version.
-          </p>
-        </Card>
-      )}
-    </>
-  );
+  return card;
 }

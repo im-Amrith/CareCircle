@@ -5,6 +5,9 @@ POST /turn                   {profile, text} -> SSE: transcript, tool_call, tool
 POST /elicitation/{id}       {action, content} answers a pending elicitation
 POST /profiles/{p}/connect   opens the profile's MCP session (initialize + tools/list)
 POST /profiles/{p}/reset     ends the session and forgets the conversation
+GET  /profiles/{p}/ui-resource?uri=ui://...   an MCP App view (resources/read, cached per session)
+POST /profiles/{p}/app/tools/call             {name, arguments}: a view's tools/call, app-visible tools only
+GET  /sandbox?host=<origin>  the MCP Apps sandbox proxy page; the web app frames it from this other origin
 GET  /rpc?profile=&after=    protocol log backlog
 GET  /healthz                MCP reachability, brain mode, speech mode
 """
@@ -19,16 +22,18 @@ from collections import defaultdict
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
+from pathlib import Path
+
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
 from .agent import AgentPool
 from .bus import Bus
 from .config import Settings, load_settings
-from .mcp_link import ElicitationBroker, Links
+from .mcp_link import AppToolDenied, ElicitationBroker, Links
 from .speech import Speech
 from .turns import TurnRunner
 
@@ -39,6 +44,14 @@ log = logging.getLogger("carecircle.app")
 class TurnIn(BaseModel):
     profile: str
     text: str = Field(min_length=1, max_length=500)
+
+
+class AppToolCall(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    arguments: dict[str, Any] | None = None
+
+
+SANDBOX_HTML = (Path(__file__).parent / "sandbox.html").read_text(encoding="utf-8")
 
 
 class ElicitationAnswer(BaseModel):
@@ -83,7 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, f"Unknown profile {profile!r}")
 
     @app.get("/healthz")
-    async def healthz() -> dict[str, Any]:
+    async def healthz(request: Request) -> dict[str, Any]:
         base = settings.mcp_url.rsplit("/mcp", 1)[0]
         try:
             async with httpx.AsyncClient(timeout=3) as client:
@@ -102,6 +115,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 else {"mode": "bedrock", "model": settings.bedrock_model_id, "region": settings.aws_region, "fallback": "mock router"}
             ),
             "speech": {"mode": speech.mode, "voice": speech.voice, "detail": speech.detail},
+            # The web app reaches us through its /api proxy, which keeps our host, so this is our own origin.
+            "sandboxUrl": f"{str(request.base_url).rstrip('/')}/sandbox",
             "profiles": [{"id": k, "name": v["name"], "connected": links.get(k).connected} for k, v in settings.profiles.items()],
         }
 
@@ -123,6 +138,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if state.get("agents"):
             state["agents"].reset(profile)
         return {"profile": profile, "reset": True}
+
+    @app.get("/profiles/{profile}/ui-resource")
+    async def ui_resource(profile: str, uri: str) -> dict[str, Any]:
+        check_profile(profile)
+        try:
+            return await links.get(profile).ui_resource(uri)
+        except ValueError as err:
+            raise HTTPException(400, str(err)) from err
+        except Exception as err:  # noqa: BLE001
+            raise HTTPException(502, f"Could not read {uri}: {err}") from err
+
+    @app.post("/profiles/{profile}/app/tools/call")
+    async def app_tool_call(profile: str, body: AppToolCall) -> dict[str, Any]:
+        check_profile(profile)
+        try:
+            return await links.get(profile).app_call_tool(body.name, body.arguments)
+        except AppToolDenied as err:
+            raise HTTPException(403, str(err)) from err
+
+    @app.get("/sandbox")
+    async def sandbox(host: str) -> HTMLResponse:
+        # The proxy only ever talks to the simulator page that framed it.
+        if host not in settings.web_origins:
+            raise HTTPException(400, "Unknown host origin")
+        return HTMLResponse(
+            SANDBOX_HTML,
+            headers={
+                "Content-Security-Policy": (
+                    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; "
+                    f"frame-ancestors {' '.join(settings.web_origins)}"
+                ),
+                "Cache-Control": "no-store",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.get("/rpc")
     async def rpc(profile: str, after: int = 0) -> dict[str, Any]:

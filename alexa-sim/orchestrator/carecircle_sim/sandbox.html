@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MCP App sandbox</title>
+<!--
+  MCP Apps sandbox proxy (spec 2026-01-26, web hosts). The simulator page frames this from a
+  different origin; this page then renders the view in an inner iframe with no origin of its own
+  (sandbox="allow-scripts", no allow-same-origin) and a Content-Security-Policy built from the
+  resource's declared domains. Every message other than ui/notifications/sandbox-* is relayed
+  unchanged between the host page and the view.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  iframe { border: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<script>
+(() => {
+  'use strict';
+  const host = new URLSearchParams(location.search).get('host');
+  let view = null;
+
+  const list = domains => (Array.isArray(domains) ? domains : []).filter(d => /^https:\/\/[a-z0-9.*:-]+$/i.test(d)).join(' ');
+
+  function policy(csp) {
+    csp = csp || {};
+    const res = list(csp.resourceDomains);
+    const connect = list(csp.connectDomains);
+    const frames = list(csp.frameDomains);
+    const base = list(csp.baseUriDomains);
+    return [
+      "default-src 'none'",
+      "script-src 'unsafe-inline' " + res,
+      "style-src 'unsafe-inline' " + res,
+      'img-src data: ' + res,
+      'font-src data: ' + res,
+      'media-src data: ' + res,
+      'connect-src ' + (connect || "'none'"),
+      'frame-src ' + (frames || "'none'"),
+      'base-uri ' + (base || "'none'"),
+      "object-src 'none'",
+      "form-action 'none'"
+    ].map(s => s.trim()).join('; ');
+  }
+
+  function withPolicy(html, csp) {
+    const meta = '<meta http-equiv="Content-Security-Policy" content="' + policy(csp).replace(/"/g, '&quot;') + '">';
+    return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, m => m + meta) : meta + html;
+  }
+
+  window.addEventListener('message', event => {
+    const msg = event.data;
+    if (!msg || msg.jsonrpc !== '2.0') return;
+    if (event.source === window.parent && event.origin === host) {
+      if (msg.method === 'ui/notifications/sandbox-resource-ready') {
+        const p = msg.params || {};
+        if (view) view.remove();
+        view = document.createElement('iframe');
+        view.setAttribute('sandbox', 'allow-scripts');
+        view.setAttribute('title', 'App view');
+        view.srcdoc = withPolicy(String(p.html || ''), p.csp);
+        document.body.append(view);
+        return;
+      }
+      if (typeof msg.method === 'string' && msg.method.startsWith('ui/notifications/sandbox-')) return;
+      if (view && view.contentWindow) view.contentWindow.postMessage(msg, '*');
+      return;
+    }
+    if (view && event.source === view.contentWindow) window.parent.postMessage(msg, host);
+  });
+
+  if (host) window.parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} }, host);
+})();
+</script>
+</body>
+</html>

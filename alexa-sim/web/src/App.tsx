@@ -16,6 +16,7 @@ import {
   type TurnEvent,
   type Warning
 } from './api';
+import { AppView } from './AppView';
 import { ResultCard } from './cards/Cards';
 import { ElicitationCard, type ElicitationState } from './ElicitationCard';
 import { ProtocolPanel } from './ProtocolPanel';
@@ -45,6 +46,9 @@ interface ProfileState {
   turns: Turn[];
   rpc: RpcEntry[];
   lastSeq: number;
+  /** Where the next poll starts. Turn events arrive out of band and can jump past an MCP App view's
+   * own calls, so only a poll, which returns everything after its cursor, moves this. */
+  polledSeq: number;
   clearedAt: number;
 }
 
@@ -67,7 +71,7 @@ const SUGGESTIONS: Record<ProfileId, string[]> = {
   maya: ['How is Mom today?', 'What does Mom take tonight?', 'Mom says her knee hurts']
 };
 
-const emptyProfile = (): ProfileState => ({ turns: [], rpc: [], lastSeq: 0, clearedAt: 0 });
+const emptyProfile = (): ProfileState => ({ turns: [], rpc: [], lastSeq: 0, polledSeq: 0, clearedAt: 0 });
 
 const TOOL_LABEL: Record<string, string> = {
   get_care_status: 'Checking today’s care status…',
@@ -95,6 +99,8 @@ export function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [banner, setBanner] = useState<{ tone: 'warn' | 'error'; text: string } | null>(null);
   const [elicit, setElicit] = useState<Record<string, ElicitationState>>({});
+  /** Tool results whose MCP App view failed to load; they fall back to the native card. */
+  const [appFailed, setAppFailed] = useState<Record<string, string>>({});
   const listener = useRef<{ stop: () => void } | null>(null);
   /** Server elicitationId -> our elicitation id, to match notifications/elicitation/complete. */
   const urlElicitations = useRef(new Map<string, string>());
@@ -107,15 +113,16 @@ export function App() {
 
   /* ----- state helpers ----- */
 
-  const addRpc = useCallback((p: ProfileId, entries: RpcEntry[]) => {
+  const addRpc = useCallback((p: ProfileId, entries: RpcEntry[], polled = false) => {
     if (!entries.length) return;
     setProfiles(all => {
       const st = all[p];
+      const polledSeq = polled ? Math.max(st.polledSeq, ...entries.map(e => e.seq)) : st.polledSeq;
       const seen = new Set(st.rpc.map(e => e.seq));
       const fresh = entries.filter(e => !seen.has(e.seq));
-      if (!fresh.length) return all;
+      if (!fresh.length) return polledSeq === st.polledSeq ? all : { ...all, [p]: { ...st, polledSeq } };
       const rpc = [...st.rpc, ...fresh].sort((a, b) => a.seq - b.seq).slice(-800);
-      return { ...all, [p]: { ...st, rpc, lastSeq: Math.max(st.lastSeq, ...fresh.map(e => e.seq)) } };
+      return { ...all, [p]: { ...st, rpc, polledSeq, lastSeq: Math.max(st.lastSeq, ...fresh.map(e => e.seq)) } };
     });
     // A URL elicitation finishes when the server says so.
     for (const e of entries) {
@@ -147,17 +154,17 @@ export function App() {
 
   useEffect(() => {
     connectProfile(profile)
-      .then(() => fetchRpc(profile, 0).then(e => addRpc(profile, e)))
+      .then(() => fetchRpc(profile, 0).then(e => addRpc(profile, e, true)))
       .catch(err => setBanner({ tone: 'error', text: `Can't open ${profileName}'s MCP session. ${err.message}` }));
   }, [profile, profileName, addRpc]);
 
-  const lastSeq = current.lastSeq;
+  const polledSeq = current.polledSeq;
   useEffect(() => {
     const timer = setInterval(() => {
-      fetchRpc(profile, lastSeq).then(e => addRpc(profile, e));
+      fetchRpc(profile, polledSeq).then(e => addRpc(profile, e, true));
     }, 2000);
     return () => clearInterval(timer);
-  }, [profile, lastSeq, addRpc]);
+  }, [profile, polledSeq, addRpc]);
 
   /* ----- a turn ----- */
 
@@ -243,6 +250,16 @@ export function App() {
     }
   }, []);
 
+  /** ui/message from an MCP App view: said in the conversation as if spoken, when free. */
+  const fromApp = useCallback(
+    (text: string) => {
+      if (busy[profile]) return false;
+      void submit(text);
+      return true;
+    },
+    [busy, profile, submit]
+  );
+
   /* ----- push to talk ----- */
 
   const talk = useCallback(async () => {
@@ -269,7 +286,7 @@ export function App() {
   const reset = useCallback(async () => {
     stopSpeaking();
     await resetProfile(profile);
-    setProfiles(all => ({ ...all, [profile]: { ...emptyProfile(), lastSeq: all[profile].lastSeq, clearedAt: all[profile].lastSeq } }));
+    setProfiles(all => ({ ...all, [profile]: { ...emptyProfile(), lastSeq: all[profile].lastSeq, polledSeq: all[profile].polledSeq, clearedAt: all[profile].lastSeq } }));
     connectProfile(profile).catch(() => undefined);
   }, [profile]);
 
@@ -303,7 +320,25 @@ export function App() {
                 {it.call.invoking ?? TOOL_LABEL[it.call.name] ?? `Calling ${it.call.name}…`}
               </p>
             ) : null;
-          if (it.kind === 'result') return withCards ? <ResultCard key={i} result={it.result} checkout={checkoutOf(t)} /> : null;
+          if (it.kind === 'result') {
+            if (!withCards) return null;
+            const key = `${t.id}:${String(it.result.id)}`;
+            if (it.result.uiResourceUri && !it.result.isError && health?.sandboxUrl && !appFailed[key]) {
+              const call = t.items.find((x): x is Extract<Item, { kind: 'call' }> => x.kind === 'call' && x.call.id === it.result.id);
+              return (
+                <AppView
+                  key={key}
+                  profile={profile}
+                  result={it.result}
+                  args={call?.call.arguments ?? {}}
+                  sandboxUrl={health.sandboxUrl}
+                  onMessage={fromApp}
+                  onFail={reason => setAppFailed(f => ({ ...f, [key]: reason }))}
+                />
+              );
+            }
+            return <ResultCard key={i} result={it.result} checkout={checkoutOf(t)} />;
+          }
           if (it.kind === 'elicitation')
             return <ElicitationCard key={i} e={it.e} state={elicit[it.e.id] ?? 'open'} onAnswer={(a, c) => answer(it.e, a, c)} onDismiss={() => setElicit(s => ({ ...s, [it.e.id]: 'complete' }))} />;
           return (

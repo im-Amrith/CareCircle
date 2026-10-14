@@ -31,6 +31,21 @@ log = logging.getLogger("carecircle.mcp")
 CLIENT_NAME = "CareCircle Alexa+ Simulator"
 ELICITATION_TIMEOUT_S = 600
 
+# MCP Apps (spec 2026-01-26): the simulator renders `ui://` views, so it declares the extension.
+UI_EXTENSION = "io.modelcontextprotocol/ui"
+UI_MIME_TYPE = "text/html;profile=mcp-app"
+# Marks tools/call requests that came from an MCP App view rather than the model.
+APP_ORIGIN_META = "carecircle.sim/origin"
+
+
+class AppToolDenied(Exception):
+    """The view asked for a tool whose `_meta.ui.visibility` doesn't include "app"."""
+
+
+def app_visible(meta: dict[str, Any]) -> bool:
+    visibility = (meta.get("ui") or {}).get("visibility")
+    return visibility is None or "app" in visibility  # the spec default is ["model", "app"]
+
 
 def _dump(message: Any) -> dict[str, Any]:
     inner = getattr(message, "message", message)
@@ -108,11 +123,22 @@ class _LoggedRead:
         return getattr(self._inner, name)
 
 
+def _declare_ui_extension(m: Any) -> None:
+    """Strands' MCPClient builds the ClientSession without a way to pass `extensions` (FL-11),
+    so the simulator adds MCP Apps support to the initialize request on its way out."""
+    inner = getattr(m, "message", None)
+    if getattr(inner, "method", None) != "initialize" or not isinstance(getattr(inner, "params", None), dict):
+        return
+    caps = inner.params.setdefault("capabilities", {})
+    caps.setdefault("extensions", {})[UI_EXTENSION] = {"mimeTypes": [UI_MIME_TYPE]}
+
+
 class _LoggedWrite:
     def __init__(self, inner: Any, link: ProfileLink) -> None:
         self._inner, self._link = inner, link
 
     async def send(self, m: Any) -> None:
+        _declare_ui_extension(m)
         self._link._observe("out", m)
         await self._inner.send(m)
 
@@ -125,6 +151,10 @@ class _LoggedWrite:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
+
+
+def _from_app(body: dict[str, Any]) -> bool:
+    return ((body.get("params") or {}).get("_meta") or {}).get(APP_ORIGIN_META) == "app"
 
 
 @dataclass
@@ -145,6 +175,7 @@ class ProfileLink:
         self.tools: list[Any] = []
         self._tool_meta: dict[str, dict[str, Any]] = {}
         self._inflight: dict[tuple[str, Any], tuple[float, str, dict[str, Any]]] = {}
+        self._ui_resources: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._client: MCPClient | None = None
         self._start_lock = asyncio.Lock()
@@ -203,6 +234,46 @@ class ProfileLink:
             structured=dict(result.get("structuredContent") or {}),
             is_error=result.get("status") == "error",
         )
+
+    # ---------- MCP Apps ----------
+
+    async def ui_resource(self, uri: str) -> dict[str, Any]:
+        """Reads a `ui://` view once per session; the protocol log shows the resources/read."""
+        if not uri.startswith("ui://"):
+            raise ValueError("MCP App views must use a ui:// URI")
+        cached = self._ui_resources.get(uri)
+        if cached is not None:
+            return cached
+        await self.ensure_started()
+        assert self._client is not None
+        result = await asyncio.to_thread(self._client.read_resource_sync, uri)
+        page = next(
+            (c for c in result.model_dump(by_alias=True, exclude_none=True, mode="json")["contents"] if c.get("mimeType") == UI_MIME_TYPE and "text" in c),
+            None,
+        )
+        if page is None:
+            raise ValueError(f"{uri} has no {UI_MIME_TYPE} content")
+        ui = (page.get("_meta") or {}).get("ui") or {}
+        view = {"uri": uri, "html": page["text"], "csp": ui.get("csp") or {}, "prefersBorder": ui.get("prefersBorder")}
+        self._ui_resources[uri] = view
+        return view
+
+    async def app_call_tool(self, name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
+        """A tools/call from an MCP App view, allowed only for tools visible to apps."""
+        await self.ensure_started()
+        assert self._client is not None
+        if name not in self._tool_meta or not app_visible(self._tool_meta[name]):
+            raise AppToolDenied(f"{name} is not available to apps")
+        result = await self._client.call_tool_async(
+            f"app-{uuid.uuid4().hex[:8]}", name, arguments or {}, meta={APP_ORIGIN_META: "app"}
+        )
+        out: dict[str, Any] = {
+            "content": [{"type": "text", "text": c["text"]} for c in result.get("content", []) if isinstance(c, dict) and "text" in c],
+            "isError": result.get("status") == "error",
+        }
+        if result.get("structuredContent") is not None:
+            out["structuredContent"] = result["structuredContent"]
+        return out
 
     # ---------- elicitation ----------
 
@@ -266,7 +337,7 @@ class ProfileLink:
             if method == "server/discover" and kind == "error":
                 note = "Version probe for MCP 2026-07-28. The server speaks 2025-11-25, so the client falls back to initialize."
 
-        if kind == "request" and method == "tools/call" and direction == "out":
+        if kind == "request" and method == "tools/call" and direction == "out" and not _from_app(body):
             params = body.get("params") or {}
             name = params.get("name", "")
             meta = self._tool_meta.get(name, {})
@@ -299,8 +370,8 @@ class ProfileLink:
             for tool in result.get("tools", []):
                 self._tool_meta[tool.get("name", "")] = tool.get("_meta") or {}
             return
-        if method != "tools/call":
-            return
+        if method != "tools/call" or ((params.get("_meta") or {}).get(APP_ORIGIN_META) == "app"):
+            return  # the view renders its own calls; they aren't conversation cards
         name = params.get("name", "")
         if "error" in body:
             text, structured, is_error, meta = body["error"].get("message", "Error"), {}, True, {}

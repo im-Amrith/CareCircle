@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -44,9 +45,9 @@ def wait_for(url: str, timeout: float = 30) -> None:
     raise RuntimeError(f"{url} did not come up")
 
 
-@pytest.fixture(scope="session")
-def mcp_server() -> Iterator[str]:
-    """Starts server/src/index.ts with tsx. Requires `npm install` in server/."""
+@contextlib.contextmanager
+def running_mcp_server() -> Iterator[str]:
+    """Starts server/src/index.ts with tsx on a free port. Requires `npm install` in server/."""
     tsx = SERVER_DIR / "node_modules" / "tsx" / "dist" / "cli.mjs"
     if not tsx.exists():
         pytest.exit("Run `npm install` in server/ first (tsx not found)", returncode=1)
@@ -70,17 +71,32 @@ def mcp_server() -> Iterator[str]:
             proc.kill()
 
 
-@pytest.fixture(scope="session")
-def sim(mcp_server: str) -> Iterator[str]:
-    settings = Settings(mcp_url=f"{mcp_server}/mcp", mock_aws=True, mock_reason="tests")
+@contextlib.contextmanager
+def running_sim(mcp_url: str) -> Iterator[str]:
+    """The orchestrator in mock mode, in a background thread."""
+    settings = Settings(mcp_url=f"{mcp_url}/mcp", mock_aws=True, mock_reason="tests")
     port = free_port()
     server = uvicorn.Server(uvicorn.Config(create_app(settings), host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-    wait_for(f"http://127.0.0.1:{port}/healthz")
-    yield f"http://127.0.0.1:{port}"
-    server.should_exit = True
-    thread.join(10)
+    try:
+        wait_for(f"http://127.0.0.1:{port}/healthz")
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(10)
+
+
+@pytest.fixture(scope="session")
+def mcp_server() -> Iterator[str]:
+    with running_mcp_server() as url:
+        yield url
+
+
+@pytest.fixture(scope="session")
+def sim(mcp_server: str) -> Iterator[str]:
+    with running_sim(mcp_server) as url:
+        yield url
 
 
 Answer = Callable[[dict[str, Any]], dict[str, Any]]

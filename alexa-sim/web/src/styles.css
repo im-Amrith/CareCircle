@@ -126,6 +126,13 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .card { background: var(--card); border: 1px solid var(--card-line); border-radius: var(--radius); padding: clamp(12px, 2cqw, 20px); font-size: clamp(0.95rem, 2cqw, 1.25rem); }
 .card-title { margin: 0 0 10px; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-2); font-weight: 600; }
 .card-warn { border-color: rgba(251, 191, 36, 0.55); }
+
+/* ---------- MCP App views ---------- */
+.app-view { border: 1px solid var(--card-line); border-radius: var(--radius); background: var(--card); overflow: hidden; }
+.app-view-bare { border-color: transparent; }
+.app-view iframe { display: block; width: 100%; border: 0; background: transparent; transition: height 0.15s ease; }
+.app-view-loading { padding: 18px; color: var(--muted); }
+.app-view-tag { margin: 0; padding: 4px 12px 6px; color: var(--muted); font-size: 0.72rem; text-align: right; }
 .card-ok { border-color: rgba(52, 211, 153, 0.5); }
 .card-alert { border-color: var(--red); background: linear-gradient(0deg, rgba(248, 113, 113, 0.14), rgba(248, 113, 113, 0.14)), var(--card); }
 .card-alert .card-title { color: #fecaca; }

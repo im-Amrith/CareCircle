@@ -8,7 +8,9 @@ function time(t: number) {
 
 function summary(e: RpcEntry): string {
   const body = e.body as any;
-  if (e.method === 'tools/call' && e.kind === 'request') return body?.params?.name ?? '';
+  if (e.method === 'tools/call' && e.kind === 'request')
+    return `${body?.params?.name ?? ''}${body?.params?._meta?.['carecircle.sim/origin'] === 'app' ? ' · from app view' : ''}`;
+  if (e.method === 'resources/read' && e.kind === 'request') return body?.params?.uri ?? '';
   if (e.method === 'tools/call' && e.kind === 'response') {
     const sc = body?.result?.structuredContent;
     return body?.result?.isError ? 'isError' : sc?.result ? `result: ${sc.result}` : 'ok';
