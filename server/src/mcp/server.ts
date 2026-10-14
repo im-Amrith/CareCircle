@@ -4,6 +4,7 @@ import { registerTools } from './tools.js';
 import { registerRefillTools } from './refills.js';
 import { registerResources } from './resources.js';
 import { registerPrompts } from './prompts.js';
+import { registerApps } from './apps.js';
 
 export const SERVER_NAME = 'carecircle-mcp';
 export const SERVER_VERSION = '0.1.0';
@@ -38,5 +39,6 @@ export function createCareCircleServer(deps: Deps): McpServer {
   registerRefillTools(server, deps);
   registerResources(server, deps);
   registerPrompts(server, deps);
+  registerApps(server);
   return server;
 }

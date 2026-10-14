@@ -15,6 +15,7 @@ import {
 import { addDays, localParts, spokenDate, spokenTime, toMinutes } from '../domain/time.js';
 import { countWord, greeting, listJoin, plural, sentences } from '../domain/speech.js';
 import { OrderOut, openOrders, orderOut, orderSentence } from './refills.js';
+import { CARE_DASHBOARD_URI, uiMeta } from './apps.js';
 import { CareError, guarded, ok, requireRole, resolveCaller, subject, type Caller, type Deps } from './context.js';
 
 /* ---------- Shared schemas ---------- */
@@ -101,6 +102,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
       }),
       outputSchema: z.object({
         date: z.string(),
+        isToday: z.boolean(),
         recipient: z.object({ id: z.string(), name: z.string() }),
         counts: z.object({
           total: z.number(),
@@ -119,7 +121,9 @@ export function registerTools(server: McpServer, deps: Deps): void {
         refillAlerts: z.array(SupplyOut),
         missedLast7Days: z.number()
       }),
-      annotations: { title: "Today's care status", readOnlyHint: true, openWorldHint: false }
+      annotations: { title: "Today's care status", readOnlyHint: true, openWorldHint: false },
+      // The dashboard re-reads status after the person taps Mark taken.
+      _meta: uiMeta(['model', 'app'], CARE_DASHBOARD_URI)
     },
     guarded(async ({ date, detail }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
@@ -208,6 +212,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
       return ok(
         {
           date: day,
+          isToday,
           recipient: { id: caller.recipient.id, name: caller.recipient.name },
           counts,
           doses: states.map(doseOut),
@@ -255,7 +260,8 @@ export function registerTools(server: McpServer, deps: Deps): void {
           })
         )
       }),
-      annotations: { title: 'Medication schedule', readOnlyHint: true, openWorldHint: false }
+      annotations: { title: 'Medication schedule', readOnlyHint: true, openWorldHint: false },
+      _meta: uiMeta(['model'])
     },
     guarded(async ({ when }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
@@ -325,7 +331,9 @@ export function registerTools(server: McpServer, deps: Deps): void {
         options: z.array(z.object({ id: z.string(), name: z.string(), purpose: z.string() })),
         nextDose: DoseOut.nullable()
       }),
-      annotations: { title: 'Log a dose', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+      annotations: { title: 'Log a dose', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      // The dashboard's Mark taken button calls this directly.
+      _meta: uiMeta(['model', 'app'])
     },
     guarded(async ({ spoken_name, medication_ids, slot, status, taken_at }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
@@ -448,7 +456,8 @@ export function registerTools(server: McpServer, deps: Deps): void {
         withinDays: z.number(),
         alerts: z.array(SupplyOut.extend({ pharmacy: z.object({ id: z.string(), name: z.string() }) }))
       }),
-      annotations: { title: 'Check medicine supply', readOnlyHint: true, openWorldHint: false }
+      annotations: { title: 'Check medicine supply', readOnlyHint: true, openWorldHint: false },
+      _meta: uiMeta(['model'])
     },
     guarded(async ({ within_days }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
@@ -506,7 +515,8 @@ export function registerTools(server: McpServer, deps: Deps): void {
         reasons: z.array(z.string()),
         familyCanSee: z.boolean()
       }),
-      annotations: { title: 'Log how they feel', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+      annotations: { title: 'Log how they feel', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      _meta: uiMeta(['model'])
     },
     guarded(async ({ note, severity }, ctx) => {
       const caller = await resolveCaller(ctx, deps);

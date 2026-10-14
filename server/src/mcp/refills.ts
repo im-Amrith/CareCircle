@@ -11,6 +11,7 @@ import {
 } from '../domain/refill.js';
 import { spokenDate } from '../domain/time.js';
 import { listJoin, plural, sentences } from '../domain/speech.js';
+import { uiMeta } from './apps.js';
 import { guarded, ok, requireRole, resolveCaller, type Caller, type Deps } from './context.js';
 
 const FulfilmentEnum = z.enum(['delivery', 'pickup']);
@@ -107,7 +108,9 @@ export function registerRefillTools(server: McpServer, deps: Deps): void {
         question: z.string().optional().describe('The question to ask, when result is needs_confirmation'),
         options: z.array(z.object({ id: z.string(), name: z.string(), purpose: z.string() }))
       }),
-      annotations: { title: 'Reorder a medicine', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }
+      annotations: { title: 'Reorder a medicine', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      // Purchases go through the conversation and its confirmation, never straight from a view.
+      _meta: uiMeta(['model'])
     },
     guarded(async ({ spoken_name, medication_id, fulfilment, confirm }, ctx) => {
       const caller = await resolveCaller(ctx, deps);

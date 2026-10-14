@@ -47,7 +47,7 @@ describe('MCP surface', () => {
   it('exposes the care plan and daily log resources, scoped to the family', async () => {
     const c = await connect(srv.url, 'maya');
     const { resources } = await c.listResources();
-    expect(resources.map(r => r.uri)).toEqual(['carecircle://family/fam-rose/care-plan']);
+    expect(resources.map(r => r.uri).sort()).toEqual(['carecircle://family/fam-rose/care-plan', 'ui://carecircle/care-dashboard']);
     const { resourceTemplates } = await c.listResourceTemplates();
     expect(resourceTemplates.map(t => t.uriTemplate).sort()).toEqual([
       'carecircle://family/{familyId}/care-plan',
