@@ -189,7 +189,8 @@ export function registerTools(server: McpServer, deps: Deps): void {
       for (const v of visits) parts.push(`${v.who} visits at ${spokenTime(v.time)}.`);
       if (latest && (detail === 'full' || latest.date === caller.local.date)) {
         const said = latest.note.replace(/\.$/, '');
-        const quoted = said[0].toLowerCase() + said.slice(1);
+        // Lower-case the first letter so it reads mid-sentence, but never the pronoun "I".
+        const quoted = /^I\b/.test(said) ? said : said[0].toLowerCase() + said.slice(1);
         parts.push(
           caller.isRecipient
             ? `You mentioned: ${quoted}.`
