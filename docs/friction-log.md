@@ -222,6 +222,26 @@ happens, not reconstructed at the end.
   interrupt, not a model-set boolean, should hold the yes for purchases and other irreversible
   actions, and show Nova's behaviour with a `confirm`-style parameter as the example.
 
+## FL-11: Strands MCPClient can't declare MCP extensions such as MCP Apps
+
+- **Date:** 2026-10-14
+- **Area:** Strands Agents 1.59.0 (`strands.tools.mcp.MCPClient`) with MCP Python SDK 2.1.1
+- **Task attempted:** Render the `get_care_status` dashboard (an MCP App, `ui://carecircle/care-dashboard`)
+  in the simulator. A client has to declare `capabilities.extensions["io.modelcontextprotocol/ui"]`
+  in `initialize` so the server knows it can show views.
+- **Steps taken:** Looked for an option on `MCPClient` to add client capabilities, then read its source.
+- **Expected:** A way to pass extensions through, since `mcp.ClientSession` 2.1.1 already accepts
+  `extensions=`.
+- **Actual:** `MCPClient` builds the `ClientSession` itself and passes only `message_handler`,
+  `elicitation_callback`, `client_info` and task settings. There's no parameter or hook for
+  `extensions`, so a Strands-based host can't say it supports MCP Apps.
+- **Severity:** Minor
+- **Workaround:** The simulator already wraps the transport's write stream to log JSON-RPC traffic,
+  so it adds the extension to the outgoing `initialize` request there. Covered by an orchestrator
+  test that checks the logged `initialize`.
+- **Suggestion:** Add `client_session_kwargs` (or `extensions=`) to `MCPClient` and forward it to
+  `ClientSession`, and document MCP Apps support for Strands hosts.
+
 ---
 
 ## Feature requests

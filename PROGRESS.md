@@ -91,7 +91,7 @@ A quick record of what's built, what you need to do next, and what's still open.
 
 ### Product
 
-- **MCP Apps UI.** Tool results can carry `_meta.ui.resourceUri`; the simulator only shows a placeholder card. Rendering comes in a later task.
+- **MCP Apps UI:** built on `feature/mcp-apps`, not committed yet. `get_care_status` links to a `ui://carecircle/care-dashboard` view with Mark taken buttons. The simulator renders it through a sandbox proxy on the orchestrator's origin. Views can call only `get_care_status` and `log_medication`; Reorder goes back through the conversation and its confirmation. Checked in headless Chrome. The Strands workaround for declaring the extension is FL-11.
 - **Appointment coordination** using MCP Tasks.
 - **Strands care-team agents.**
 
