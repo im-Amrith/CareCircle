@@ -10,10 +10,12 @@ Built for the [Build, Ship, Shape: Amazon Developer Hackathon](https://amazonapp
 
 | Part | State |
 | --- | --- |
-| MCP server (`server/`): 6 tools, 2 resource templates, 2 prompts, stateful Streamable HTTP | Working, 57 tests |
+| MCP server (`server/`): 8 tools, 4 resource templates (2 subscribable), 1 MCP App view, 2 prompts, stateful Streamable HTTP | Working, 70 tests |
 | Refill ordering: voice confirmation, form and URL elicitation, secure checkout page | Working |
 | Simulator (`alexa-sim/`): Strands agent on Amazon Bedrock (Nova 2 Lite), Amazon Polly, device frames, live MCP protocol panel | Working, mock and AWS modes |
-| Appointment coordination (Tasks), MCP Apps UI | Next |
+| Interactive care dashboard (MCP Apps) | Working |
+| Family features: live updates across devices, safety alerts, Hindi, accessibility, gentle reminders, evening summary (Amazon SNS) | Working |
+| Appointment coordination (Tasks) | Next |
 | AWS deployment: AgentCore Runtime, Strands care-team agents | Next |
 
 ## Quick start (no AWS needed)
@@ -109,6 +111,7 @@ The orchestrator uses only the default AWS credential chain; never put keys in f
 | `POLLY_VOICES` | `Kajal,Joanna` | Neural voices to try at startup, in order |
 | `MOCK_AWS` | auto | `1` forces mock mode, `0` forces AWS mode |
 | `MCP_URL` | `http://127.0.0.1:8000/mcp` | CareCircle server |
+| `REMINDER_IDLE_S` | `45` | Seconds a device must be quiet before it gives a gentle dose reminder; `0` turns reminders off |
 
 If a Bedrock call fails mid-demo (throttling, network, access), that turn falls back to the mock router and the simulator shows a warning banner: "AWS Bedrock failed, so this turn used the offline router." If Polly fails, the browser speaks instead. `GET http://127.0.0.1:8100/healthz` reports which modes are active.
 
@@ -126,6 +129,18 @@ With the clock frozen at 9 am IST (`npm run sim:demo` or `sim:mock`):
 
 **New chat** resets a profile's MCP session and conversation. Restart `npm run sim:demo` to reset the family's data.
 
+### Family demo (two devices)
+
+Click **Family view** at the top: Rose on a Show 8 on the left, Sam on a Phone on the right. Each has its own input, settings and conversation.
+
+1. **Rose:** "Good morning". **Sam:** "How is Mom today?" Both get the dashboard.
+2. On Rose's dashboard, tap **Mark taken** on Metformin. Sam's dashboard updates by itself (the protocol panel shows `notifications/resources/updated`, then `resources/read`).
+3. On Rose's device, click **Remind now** (or wait 45 seconds without speaking). "Rose, a gentle reminder: your Vitamin D3 from 8 am isn't logged yet. Have you taken it?" **Rose:** "Yes". It's logged.
+4. **Rose:** "I had a fall in the kitchen". Sam's phone lights up yellow and announces the alert. Rose's own device doesn't.
+5. **Rose:** "Say that again". The last reply again, slower, with no tool call.
+6. Switch Rose to **हिंदी** (or say "Talk to me in Hindi"). **Rose:** "सुप्रभात". She hears her status in Hindi and her dashboard is in Hindi; Sam still hears English.
+7. **Sam:** "Send everyone today's summary". The summary arrives as a message on Sam's phone (and Maya's), and by email when SNS is set up.
+
 ## What the server exposes
 
 ### Tools
@@ -137,7 +152,9 @@ With the clock frozen at 9 am IST (`npm run sim:demo` or `sim:mock`):
 | `log_medication` | "I took my morning pills", "I took the blood pressure one" | Idempotent: repeating a call never double-logs. Ambiguous names return options to ask about |
 | `check_refills` | "Am I running low on anything?" | Read-only. Days of supply left, when each runs out, and any refill already on its way |
 | `request_refill` | "Reorder my blood pressure tablets", "Yes" after a low-supply warning | Asks first, then opens a one-time checkout link. Nothing is ordered until checkout is completed. Asking twice never orders twice |
-| `log_wellbeing` | "I slept badly", "I had a fall" | Red-flag words (falls, chest pain, breathing trouble) return safety guidance |
+| `log_wellbeing` | "I slept badly", "I had a fall", "मैं रसोई में गिर गई" | Red-flag words (falls, chest pain, breathing trouble, in English or Hindi) return safety guidance and alert the family's devices |
+| `set_language` | "Talk to me in Hindi", "हिंदी में बात करो", "Speak English" | Changes only the caller's own language; the rest of the family keeps theirs |
+| `send_daily_summary` | "Send everyone today's summary" | Writes the day's summary to the family inbox, and to Amazon SNS when configured. Also sent automatically every evening |
 
 Every tool returns three things:
 
@@ -166,9 +183,32 @@ How the checkout is secured:
 
 - `carecircle://family/{familyId}/care-plan`: the care plan as Markdown
 - `carecircle://family/{familyId}/log/{date}`: one day's doses, notes and visits as JSON
+- `carecircle://family/{familyId}/today`: **subscribable.** Today's status for the reader, in their language, plus today's safety alerts and (for the person cared for) a gentle reminder about overdue doses
+- `carecircle://family/{familyId}/inbox`: **subscribable.** Messages CareCircle sent the family (the evening summary)
+- `ui://carecircle/care-dashboard`: the MCP App view for `get_care_status` (`text/html;profile=mcp-app`, self-contained, no network)
 - Prompts: `morning_briefing`, `caregiver_handoff`
 
 Resources are scoped to the caller's own family; any other family id reads as "not found".
+
+### Live family updates
+
+Every write to the store (a dose, a note, an order, a language change, a message) is announced on a family-wide change feed. Each session can `resources/subscribe` to `today` and `inbox`, and gets `notifications/resources/updated` within about 120 ms of a change, one per burst. Rose taps **Mark taken** on her Echo Show; Sam's phone shows it straight away. The server only says what changed; the device decides how to show or announce it.
+
+### Hindi
+
+Each family member has a spoken language (`set_language`). For Hindi, the main replies (status, logging doses, notes, schedules, supplies, reminders and alerts) are written in Hindi on the server, with medicine names kept as on the box. In AWS mode, Nova replies in Hindi and Polly's Kajal voice speaks it (`hi-IN`). In mock mode, the router understands common Hindi and Hinglish phrases ("मैंने दवा ले ली", "maine dawai le li"), and turns symptoms into an English note with her own words kept, so the family can read it. Red-flag words are detected in Hindi too.
+
+### Evening summary
+
+At 8:30 pm family time (`DIGEST_TIME`), CareCircle sends everyone except the person cared for a short written summary: doses taken and missed, alerts, notes, supplies and visits. It always goes to the family inbox. To also send it by email or SMS, create an Amazon SNS topic, subscribe the family to it, and set `SNS_TOPIC_ARN`:
+
+```bash
+aws sns create-topic --name carecircle-family-summary --region ap-southeast-2
+aws sns subscribe --topic-arn <topic arn> --protocol email --notification-endpoint you@example.com
+# confirm the email, then start the server with SNS_TOPIC_ARN=<topic arn>
+```
+
+If SNS fails, the message still reaches the inbox and the failure is recorded on it.
 
 ### Transport (MCP 2025-11-25 Streamable HTTP)
 
@@ -190,6 +230,9 @@ Resources are scoped to the caller's own family; any other family id reads as "n
 | `CARECIRCLE_NOW` | real time | Freeze the clock (ISO 8601) |
 | `CARECIRCLE_SEED` | `seed/rose.json` | Seed family file |
 | `PUBLIC_URL` | the request's origin | Base URL for checkout links when running behind a proxy or on AWS |
+| `DIGEST_TIME` | `20:30` | Family-local time for the evening summary; `off` disables the scheduler |
+| `SNS_TOPIC_ARN` | unset | Amazon SNS topic for the evening summary. Unset = in-app inbox only |
+| `AWS_REGION` | SDK default | Region for SNS |
 
 Dev auth (`Bearer dev:<userId>`) is for local use only. The AWS deployment replaces it with Cognito JWTs validated by AgentCore Runtime.
 

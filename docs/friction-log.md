@@ -242,6 +242,31 @@ happens, not reconstructed at the end.
 - **Suggestion:** Add `client_session_kwargs` (or `extensions=`) to `MCPClient` and forward it to
   `ClientSession`, and document MCP Apps support for Strands hosts.
 
+## FL-12: Strands MCPClient has no resource subscriptions, and the MCP SDK already deprecates them
+
+- **Date:** 2026-10-15
+- **Area:** Strands Agents 1.59.0 (`strands.tools.mcp.MCPClient`) with MCP Python SDK 2.1.1
+- **Task attempted:** Keep every family member's device live: when Rose logs a dose, Sam's phone
+  updates. The server supports `resources/subscribe` on a `today` resource and sends
+  `notifications/resources/updated`.
+- **Steps taken:** Looked for a subscribe method on `MCPClient`, then read its source and the
+  `ClientSession` it wraps.
+- **Expected:** `MCPClient.subscribe_resource_sync(uri)` next to `read_resource_sync`, and a way to
+  receive `notifications/resources/updated`.
+- **Actual:** `MCPClient` has list and read for resources but no subscribe, and it doesn't surface
+  server notifications to the host. `ClientSession.subscribe_resource` exists, but calling it
+  logs `MCPDeprecationWarning: resources/subscribe is removed as of 2026-07-28; use
+  Client.listen() instead`, even on a session that negotiated 2025-11-25, where subscribe is the
+  only option.
+- **Severity:** Minor
+- **Workaround:** The simulator calls the wrapped `ClientSession.subscribe_resource` on the
+  client's own event loop, and watches the transport (which it already logs) for
+  `notifications/resources/updated`. Covered by orchestrator tests.
+- **Suggestion:** Add `subscribe_resource_sync` and a notification callback to `MCPClient`, or
+  document how a Strands host should follow resource changes on both 2025-11-25 (subscribe) and
+  2026-07-28 (`subscriptions/listen`). In the MCP SDK, only warn when the negotiated protocol
+  version is one where subscribe is actually gone.
+
 ---
 
 ## Feature requests
