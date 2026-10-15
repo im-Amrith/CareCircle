@@ -25,6 +25,11 @@ export interface Config {
   sessionIdleMinutes: number;
   /** Public base URL for checkout links, e.g. https://carecircle.example.com. Defaults to the request's origin. */
   publicUrl?: string;
+  /** Amazon SNS topic for the evening summary (family members subscribe by email or SMS). Unset = in-app inbox only. */
+  snsTopicArn?: string;
+  awsRegion?: string;
+  /** Family-local HH:MM to send the evening summary; DIGEST_TIME=off disables the scheduler. */
+  digestTime?: string;
 }
 
 function list(v: string | undefined): string[] | undefined {
@@ -43,7 +48,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     defaultUser: env.CARECIRCLE_DEFAULT_USER ?? 'sam',
     fixedNow: env.CARECIRCLE_NOW || undefined,
     sessionIdleMinutes: Number(env.SESSION_IDLE_MINUTES ?? 30),
-    publicUrl: env.PUBLIC_URL?.replace(/\/+$/, '') || undefined
+    publicUrl: env.PUBLIC_URL?.replace(/\/+$/, '') || undefined,
+    snsTopicArn: env.SNS_TOPIC_ARN || undefined,
+    awsRegion: env.AWS_REGION || env.AWS_DEFAULT_REGION || undefined,
+    digestTime: env.DIGEST_TIME === 'off' ? undefined : /^\d{2}:\d{2}$/.test(env.DIGEST_TIME ?? '') ? env.DIGEST_TIME : '20:30'
   };
 }
 

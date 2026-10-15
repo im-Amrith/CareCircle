@@ -5,6 +5,9 @@
  */
 
 export type Role = 'recipient' | 'coordinator' | 'helper';
+/** Languages CareCircle can speak. Medicine names stay as they are on the box. */
+export const LANGUAGES = ['en', 'hi'] as const;
+export type Language = (typeof LANGUAGES)[number];
 export const SLOTS = ['morning', 'noon', 'evening', 'night'] as const;
 export type Slot = (typeof SLOTS)[number];
 
@@ -26,6 +29,8 @@ export interface Member {
   relation: string;
   /** Used in spoken replies about this person */
   pronoun?: 'she' | 'he' | 'they';
+  /** Spoken replies to this person use this language. Default en. */
+  language?: Language;
 }
 
 export interface Pharmacy {
@@ -118,9 +123,29 @@ export interface RefillOrder {
   cancelledAt?: string;
 }
 
+/** A message CareCircle sent to the family, e.g. the evening summary. */
+export interface FamilyMessage {
+  id: string;
+  familyId: string;
+  kind: 'daily_summary';
+  /** Family-local date the message is about */
+  date: string;
+  title: string;
+  text: string;
+  /** Member ids it was sent to */
+  to: string[];
+  sentAt: string;
+  /** Member id, or 'schedule' when the evening scheduler sent it */
+  sentBy: string;
+  /** Where it went: always the in-app inbox; Amazon SNS when a topic is configured */
+  delivery: { inbox: true; sns: 'sent' | 'failed' | 'off'; snsMessageId?: string; snsError?: string };
+}
+
 export interface CareStore {
   getMember(userId: string): Promise<Member | undefined>;
+  setMemberLanguage(userId: string, language: Language): Promise<Member>;
   getFamily(familyId: string): Promise<Family | undefined>;
+  listFamilies(): Promise<Family[]>;
   listMembers(familyId: string): Promise<Member[]>;
   listMedications(familyId: string): Promise<Medication[]>;
   getMedication(familyId: string, medicationId: string): Promise<Medication | undefined>;
@@ -141,4 +166,7 @@ export interface CareStore {
    * updated order, or undefined if it had already moved on.
    */
   transitionOrder(orderId: string, from: OrderStatus, patch: Partial<RefillOrder> & { status: OrderStatus }): Promise<RefillOrder | undefined>;
+  addMessage(message: FamilyMessage): Promise<void>;
+  /** Newest first */
+  listMessages(familyId: string, limit?: number): Promise<FamilyMessage[]>;
 }

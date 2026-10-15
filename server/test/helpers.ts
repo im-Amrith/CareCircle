@@ -18,7 +18,7 @@ export async function startServer(nowIso = NINE_AM_IST) {
   const config = { ...loadConfig({}), port: 0, fixedNow: nowIso, seedPath: SEED };
   const clock = makeClock(nowIso);
   const store = seededStore(nowIso);
-  const { app, close, sessions } = createHttpApp(config, { store, clock, defaultUser: config.defaultUser });
+  const { app, close, sessions, deps } = createHttpApp(config, { store, clock, defaultUser: config.defaultUser });
   const server: Server = await new Promise(res => {
     const s = app.listen(0, '127.0.0.1', () => res(s));
   });
@@ -28,6 +28,8 @@ export async function startServer(nowIso = NINE_AM_IST) {
     url,
     store,
     sessions,
+    /** The deps the server runs with: its store wrapper announces every write. */
+    deps,
     async stop() {
       await close();
       await new Promise(res => server.close(res));

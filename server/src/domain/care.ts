@@ -181,7 +181,13 @@ const RED_FLAGS: { pattern: RegExp; label: string }[] = [
   { pattern: /\b(fainted|passed out|blacked out|unconscious)\b/, label: 'fainting' },
   { pattern: /\b(stroke|slurred|face (is )?droop|one side (is )?(numb|weak))\b/, label: 'stroke signs' },
   { pattern: /\b(bleeding (a lot|heavily)|won't stop bleeding|vomiting blood)\b/, label: 'heavy bleeding' },
-  { pattern: /\b(overdose|took too many|double dose|extra (tablet|pill)s?)\b/, label: 'possible medication error' }
+  { pattern: /\b(overdose|took too many|double dose|extra (tablet|pill)s?)\b/, label: 'possible medication error' },
+  // Hindi (Devanagari) and Hinglish. \b doesn't work around Devanagari, so these match on substrings.
+  { pattern: /(सीने|छाती) में (दर्द|जकड़न|भारीपन)|\b(seene|chhati|chati) (mein|me) dard\b/, label: 'chest pain' },
+  { pattern: /(साँस|सांस) (नहीं|लेने में)|\b(saans|sans) (nahi|lene)\b/, label: 'breathing difficulty' },
+  { pattern: /गिर (गई|गया|गयी|पड़ी|पड़ा)|फिसल (गई|गया|गयी)|\b(gir|phisal) (gayi|gai|gaya|padi|pada)\b/, label: 'a fall' },
+  { pattern: /बेहोश|\bbehosh\b/, label: 'fainting' },
+  { pattern: /(ज़्यादा|ज्यादा|दो बार) (दवा|दवाई|गोली|गोलियाँ) (ले|खा)/, label: 'possible medication error' }
 ];
 
 export interface SafetyCheck {

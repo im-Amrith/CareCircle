@@ -1,6 +1,7 @@
 import * as z from 'zod';
 import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
-import type { Fulfilment, Medication, RefillOrder } from '../store/types.js';
+import type { Fulfilment, Language, Medication, RefillOrder } from '../store/types.js';
+import { dateHi } from '../domain/hindi.js';
 import { matchMedication, refillAlerts, supply } from '../domain/care.js';
 import {
   CHECKOUT_MINUTES,
@@ -47,8 +48,14 @@ export async function orderOut(deps: Deps, order: RefillOrder, now: Date): Promi
 }
 
 /** One spoken sentence about an open order, e.g. "A refill arrives tomorrow." */
-export function orderSentence(order: RefillOrder, now: Date, today: string): string {
-  if (effectiveStatus(order, now) === 'awaiting_checkout') return 'A refill is waiting for checkout.';
+export function orderSentence(order: RefillOrder, now: Date, today: string, lang: Language = 'en'): string {
+  const awaiting = effectiveStatus(order, now) === 'awaiting_checkout';
+  if (lang === 'hi') {
+    if (awaiting) return 'रीफ़िल का ऑर्डर चेकआउट के इंतज़ार में है।';
+    const when = dateHi(order.readyOn ?? today, today);
+    return order.fulfilment === 'delivery' ? `रीफ़िल ${when} पहुँच जाएगा।` : `रीफ़िल ${when} दुकान पर लेने के लिए तैयार होगा।`;
+  }
+  if (awaiting) return 'A refill is waiting for checkout.';
   const when = spokenDate(order.readyOn ?? today, today);
   return order.fulfilment === 'delivery' ? `A refill arrives ${when}.` : `A refill is ready for pickup ${when}.`;
 }

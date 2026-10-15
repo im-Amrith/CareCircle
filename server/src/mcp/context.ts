@@ -1,5 +1,7 @@
 import type { ServerContext, CallToolResult } from '@modelcontextprotocol/server';
-import type { CareStore, Family, Member, Role } from '../store/types.js';
+import type { CareStore, Family, Language, Member, Role } from '../store/types.js';
+import type { ChangeHub } from '../store/changes.js';
+import type { Notifier } from '../notify/notifier.js';
 import type { Clock } from '../config.js';
 import { localParts, type LocalParts } from '../domain/time.js';
 import { voiceSafe } from '../domain/speech.js';
@@ -16,6 +18,10 @@ export interface Deps {
    * session that opened the checkout link. Set by request_refill, fired by the checkout page.
    */
   checkoutWatchers?: Map<string, () => Promise<void>>;
+  /** Family-wide change feed; sessions turn it into resource update notifications. Set by createHttpApp. */
+  changes?: ChangeHub;
+  /** Delivers the evening summary (inbox, plus Amazon SNS when configured). Set by createHttpApp. */
+  notifier?: Notifier;
 }
 
 export interface Caller {
@@ -25,6 +31,8 @@ export interface Caller {
   now: Date;
   local: LocalParts;
   isRecipient: boolean;
+  /** The language replies to this caller are spoken in */
+  lang: Language;
 }
 
 /** Thrown inside tool handlers; turned into a spoken, user-safe isError result. */
@@ -36,7 +44,11 @@ export function userIdFrom(ctx: ServerContext | undefined, deps: Deps): string {
 }
 
 export async function resolveCaller(ctx: ServerContext | undefined, deps: Deps): Promise<Caller> {
-  const userId = userIdFrom(ctx, deps);
+  return callerFor(userIdFrom(ctx, deps), deps);
+}
+
+/** The caller for a known member, e.g. when the evening scheduler acts for the family. */
+export async function callerFor(userId: string, deps: Deps): Promise<Caller> {
   const member = await deps.store.getMember(userId);
   if (!member) throw new CareError("I couldn't find your CareCircle account. Please link your account and try again.");
   const family = await deps.store.getFamily(member.familyId);
@@ -50,7 +62,8 @@ export async function resolveCaller(ctx: ServerContext | undefined, deps: Deps):
     recipient,
     now,
     local: localParts(now, family.timezone),
-    isRecipient: member.id === recipient.id
+    isRecipient: member.id === recipient.id,
+    lang: member.language ?? 'en'
   };
 }
 

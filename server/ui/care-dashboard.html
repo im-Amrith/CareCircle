@@ -12,6 +12,8 @@
     tools/call log_medication and get_care_status, ui/message                   (view -> host)
     ui/notifications/tool-input, tool-result, tool-cancelled, host-context-changed,
     ui/resource-teardown                                                        (host -> view)
+  Follows the host's locale (English or Hindi) and its --font-text-md-size style variable,
+  and re-renders whenever the host sends a newer tool-result (live family updates).
 -->
 <style>
   :root {
@@ -31,14 +33,16 @@
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  /* Everything is in rem, so the host's text size variable scales the whole view. */
+  html { font-size: var(--font-text-md-size, 16px); }
   html, body { margin: 0; background: var(--bg); color: var(--ink); }
-  body { font: 16px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif; padding: 16px; }
+  body { font: 1rem/1.4 "Segoe UI", "Nirmala UI", "Noto Sans Devanagari", system-ui, -apple-system, sans-serif; padding: 1rem; }
   button { font: inherit; }
   :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   header { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
-  .ring { position: relative; width: 76px; height: 76px; flex: none; }
+  .ring { position: relative; width: 4.75rem; height: 4.75rem; flex: none; }
   .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .ring-num { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; font-size: 1.15rem; }
   h1 { font-size: 1.35rem; margin: 0; }
@@ -53,7 +57,7 @@
   .slot + .slot { margin-top: 10px; }
   .slot-head { font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
   ul { list-style: none; margin: 0; padding: 0; }
-  .dose { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); min-height: 52px; }
+  .dose { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); min-height: 3.25rem; }
   .slot ul li:first-child { border-top: 0; }
   .dose-main { flex: 1; min-width: 0; }
   .dose-name { font-weight: 600; font-size: 1.05rem; }
@@ -63,7 +67,7 @@
   .s-skipped, .s-upcoming { color: var(--upcoming); background: var(--upcoming-bg); }
   .s-due { color: var(--due); background: var(--due-bg); }
   .s-missed { color: var(--missed); background: var(--missed-bg); }
-  .btn { min-height: 44px; min-width: 44px; padding: 8px 16px; border-radius: 10px; border: 2px solid var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 700; cursor: pointer; }
+  .btn { min-height: 2.75rem; min-width: 2.75rem; padding: 8px 16px; border-radius: 10px; border: 2px solid var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 700; cursor: pointer; }
   .btn-quiet { background: transparent; color: var(--accent); }
   .btn:disabled { opacity: 0.55; cursor: default; }
 
@@ -86,8 +90,40 @@
 (() => {
   'use strict';
   const PROTOCOL_VERSION = '2026-01-26';
-  const SLOT_NAMES = { morning: 'Morning', noon: 'Lunchtime', evening: 'Evening', night: 'Night' };
-  const STATUS_LABEL = { taken: 'Taken', skipped: 'Skipped', due: 'Due now', upcoming: 'Later', missed: 'Not logged' };
+  // Labels in the host's language (hostContext.locale). Medicine names stay as on the box.
+  const TEXT = {
+    en: {
+      slots: { morning: 'Morning', noon: 'Lunchtime', evening: 'Evening', night: 'Night' },
+      status: { taken: 'Taken', skipped: 'Skipped', due: 'Due now', upcoming: 'Later', missed: 'Not logged' },
+      doses: 'Doses', supply: 'Supply', notes: 'Visits and notes', markTaken: 'Mark taken', saving: 'Saving…', reorder: 'Reorder',
+      noDoses: 'No doses scheduled.', stocked: 'All medicines well stocked.', nothingNew: 'Nothing new today.',
+      allDone: 'All doses done for today.', next: (name, at) => 'Next: ' + name + ' at ' + at,
+      daysLeft: n => n + (n === 1 ? ' day' : ' days') + ' left', pills: n => n + (n === 1 ? ' pill' : ' pills'),
+      visits: (who, at, why) => [who, ' visits at ' + at + (why ? ' · ' + why : '')], note: 'Note: ', alert: 'Alert: ',
+      taken: (t, n) => t + ' of ' + n + ' doses taken', markLabel: name => 'Mark ' + name + ' taken',
+      placed: (pickup, on) => 'Order placed, ' + (pickup ? 'ready ' : 'arrives ') + on, ordered: 'Order placed', checkout: 'Waiting for checkout',
+      cancelled: 'The request was cancelled.', failed: "Couldn't load today's care.", logged: name => name + ' logged.',
+      couldNotLog: msg => "Couldn't log that: " + msg, couldNotAsk: msg => "Couldn't ask for that: " + msg,
+      footer: 'CareCircle coordinates care. It does not give medical advice.', loading: "Loading today's care…"
+    },
+    hi: {
+      slots: { morning: 'सुबह', noon: 'दोपहर', evening: 'शाम', night: 'रात' },
+      status: { taken: 'ले ली', skipped: 'छोड़ी', due: 'अभी लेनी है', upcoming: 'बाद में', missed: 'दर्ज नहीं' },
+      doses: 'खुराक', supply: 'दवा का स्टॉक', notes: 'मुलाक़ातें और नोट्स', markTaken: 'ले ली', saving: 'दर्ज हो रही है…', reorder: 'दोबारा मंगाएँ',
+      noDoses: 'आज कोई खुराक नहीं है।', stocked: 'सभी दवाइयाँ पर्याप्त हैं।', nothingNew: 'आज कुछ नया नहीं।',
+      allDone: 'आज की सारी खुराक हो गईं।', next: (name, at) => 'अगली: ' + name + ', ' + at,
+      daysLeft: n => n + ' दिन की बची', pills: n => n + ' गोली',
+      visits: (who, at, why) => [who, ' · ' + at + (why ? ' · ' + why : '')], note: 'नोट: ', alert: 'अलर्ट: ',
+      taken: (t, n) => n + ' में से ' + t + ' खुराक ली गईं', markLabel: name => name + ' ले ली, दर्ज करें',
+      placed: (pickup, on) => 'ऑर्डर हो गया, ' + on + (pickup ? ' को तैयार' : ' को पहुँचेगा'), ordered: 'ऑर्डर हो गया', checkout: 'चेकआउट बाकी है',
+      cancelled: 'अनुरोध रद्द हो गया।', failed: 'आज की जानकारी नहीं मिल पाई।', logged: name => name + ' दर्ज हो गई।',
+      couldNotLog: msg => 'दर्ज नहीं हो पाया: ' + msg, couldNotAsk: msg => 'पूछ नहीं पाई: ' + msg,
+      footer: 'CareCircle देखभाल में मदद करता है। यह डॉक्टरी सलाह नहीं देता।', loading: 'आज की जानकारी आ रही है…'
+    }
+  };
+  let lang = 'en';
+  let locale = 'en-GB';
+  const T = () => TEXT[lang];
 
   const app = document.getElementById('app');
   const live = document.getElementById('live');
@@ -124,7 +160,7 @@
         acceptResult(msg.params);
         break;
       case 'ui/notifications/tool-cancelled':
-        app.innerHTML = '<p class="empty">The request was cancelled.</p>';
+        app.replaceChildren(el('p', { class: 'empty' }, T().cancelled));
         break;
       case 'ui/notifications/host-context-changed':
         applyContext(msg.params || {});
@@ -139,14 +175,23 @@
   });
 
   function applyContext(ctx) {
-    if (ctx.theme === 'dark' || ctx.theme === 'light') document.documentElement.dataset.theme = ctx.theme;
+    const root = document.documentElement;
+    if (ctx.theme === 'dark' || ctx.theme === 'light') root.dataset.theme = ctx.theme;
+    if (typeof ctx.locale === 'string') {
+      lang = /^hi\b/i.test(ctx.locale) ? 'hi' : 'en';
+      locale = lang === 'hi' ? 'hi-IN' : 'en-GB';
+      root.lang = lang;
+    }
+    // Host style variables, e.g. a larger --font-text-md-size for older readers.
+    const vars = (ctx.styles && ctx.styles.variables) || {};
+    for (const [name, value] of Object.entries(vars)) if (/^--[\w-]+$/.test(name) && typeof value === 'string') root.style.setProperty(name, value);
+    render();
   }
 
   function acceptResult(result) {
     if (!result || result.isError || !result.structuredContent) {
       const text = result && result.content && result.content.find(c => c.type === 'text');
-      app.innerHTML = '';
-      app.append(el('p', { class: 'empty' }, text ? text.text : "Couldn't load today's care."));
+      app.replaceChildren(el('p', { class: 'empty' }, text ? text.text : T().failed));
       return;
     }
     state.status = result.structuredContent;
@@ -166,11 +211,11 @@
         arguments: { medication_ids: [dose.medicationId], slot: dose.slot, status: 'taken' }
       });
       const said = textOf(result);
-      state.toast = { text: said || dose.name + ' logged.', bad: Boolean(result && result.isError) };
+      state.toast = { text: said || T().logged(dose.name), bad: Boolean(result && result.isError) };
       const fresh = await request('tools/call', { name: 'get_care_status', arguments: {} });
       if (fresh && !fresh.isError && fresh.structuredContent) state.status = fresh.structuredContent;
     } catch (err) {
-      state.toast = { text: "Couldn't log that: " + err.message, bad: true };
+      state.toast = { text: T().couldNotLog(err.message), bad: true };
     } finally {
       state.busy.delete(key);
       render();
@@ -183,7 +228,7 @@
     try {
       await request('ui/message', { role: 'user', content: [{ type: 'text', text: 'Reorder ' + alert.name }] });
     } catch (err) {
-      state.toast = { text: "Couldn't ask for that: " + err.message, bad: true };
+      state.toast = { text: T().couldNotAsk(err.message), bad: true };
       render();
     }
   }
@@ -204,14 +249,18 @@
 
   function clock(hhmm) {
     const [h, m] = hhmm.split(':').map(Number);
-    const ampm = h < 12 ? 'am' : 'pm';
     const h12 = h % 12 || 12;
+    if (lang === 'hi') {
+      const part = h < 4 ? 'रात' : h < 12 ? 'सुबह' : h < 16 ? 'दोपहर' : h < 19 ? 'शाम' : 'रात';
+      return part + ' ' + (m ? h12 + ':' + String(m).padStart(2, '0') : h12 + ' बजे');
+    }
+    const ampm = h < 12 ? 'am' : 'pm';
     return m ? h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm : h12 + ' ' + ampm;
   }
 
   function dayLabel(iso) {
     const d = new Date(iso + 'T12:00:00Z');
-    return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+    return d.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
   }
 
   function ring(taken, total) {
@@ -220,7 +269,7 @@
       '<circle cx="38" cy="38" r="' + r + '" fill="none" stroke="var(--ring-track)" stroke-width="8"/>' +
       '<circle cx="38" cy="38" r="' + r + '" fill="none" stroke="var(--taken)" stroke-width="8" stroke-linecap="round"' +
       ' stroke-dasharray="' + (c * frac).toFixed(1) + ' ' + c.toFixed(1) + '"/></svg>';
-    const box = el('div', { class: 'ring', role: 'img', 'aria-label': taken + ' of ' + total + ' doses taken' });
+    const box = el('div', { class: 'ring', role: 'img', 'aria-label': T().taken(taken, total) });
     box.innerHTML = svg;
     box.append(el('span', { class: 'ring-num', 'aria-hidden': 'true' }, taken + '/' + total));
     return box;
@@ -233,62 +282,68 @@
     return el('li', { class: 'dose' },
       el('div', { class: 'dose-main' },
         el('div', { class: 'dose-name' }, d.name + ' ', el('span', { class: 'dose-meta' }, d.strength)),
-        el('div', { class: 'dose-meta' }, clock(d.time) + ' · ' + d.pills + (d.pills === 1 ? ' pill' : ' pills'))),
+        el('div', { class: 'dose-meta' }, clock(d.time) + ' · ' + T().pills(d.pills))),
       canLog
-        ? el('button', { class: 'btn', disabled: busy, 'aria-label': 'Mark ' + d.name + ' taken', onclick: () => markTaken(d) }, busy ? 'Saving…' : 'Mark taken')
-        : el('span', { class: 'pill s-' + d.status }, STATUS_LABEL[d.status] || d.status));
+        ? el('button', { class: 'btn', disabled: busy, 'aria-label': T().markLabel(d.name), onclick: () => markTaken(d) }, busy ? T().saving : T().markTaken)
+        : el('span', { class: 'pill s-' + d.status }, T().status[d.status] || d.status));
   }
 
   function orderLine(o) {
-    if (o.status === 'placed') return o.readyOn ? 'Order placed, ' + (o.fulfilment === 'pickup' ? 'ready ' : 'arrives ') + o.readyOn : 'Order placed';
-    if (o.status === 'awaiting_checkout') return 'Waiting for checkout';
+    if (o.status === 'placed') return o.readyOn ? T().placed(o.fulfilment === 'pickup', dayLabel(o.readyOn)) : T().ordered;
+    if (o.status === 'awaiting_checkout') return T().checkout;
     return '';
   }
 
   function render() {
     const s = state.status;
     if (!s) return;
+    const t = T();
     const doses = s.doses || [];
     const slots = [...new Set(doses.map(d => d.slot))];
 
     const doseSection = el('section', { 'aria-labelledby': 'h-doses' },
-      el('h2', { id: 'h-doses' }, 'Doses'),
+      el('h2', { id: 'h-doses' }, t.doses),
       doses.length
         ? slots.map(slot => el('div', { class: 'slot' },
-            el('div', { class: 'slot-head' }, SLOT_NAMES[slot] || slot),
+            el('div', { class: 'slot-head' }, t.slots[slot] || slot),
             el('ul', {}, doses.filter(d => d.slot === slot).map(doseRow))))
-        : el('p', { class: 'empty' }, 'No doses scheduled.'));
+        : el('p', { class: 'empty' }, t.noDoses));
 
     const refills = s.refillAlerts || [];
     const supply = el('section', { 'aria-labelledby': 'h-supply' },
-      el('h2', { id: 'h-supply' }, 'Supply'),
+      el('h2', { id: 'h-supply' }, t.supply),
       refills.length
         ? refills.map(a => el('div', { class: 'fact refill' },
-            el('div', {}, el('strong', {}, a.name), ' · ' + a.daysLeft + (a.daysLeft === 1 ? ' day' : ' days') + ' left',
+            el('div', {}, el('strong', {}, a.name), ' · ' + t.daysLeft(a.daysLeft),
               a.order && orderLine(a.order) ? el('div', { class: 'dose-meta' }, orderLine(a.order)) : null),
             !a.order && !state.readOnly
-              ? el('button', { class: 'btn btn-quiet', onclick: () => askToReorder(a) }, 'Reorder')
+              ? el('button', { class: 'btn btn-quiet', onclick: () => askToReorder(a) }, t.reorder)
               : null))
-        : el('p', { class: 'empty' }, 'All medicines well stocked.'));
+        : el('p', { class: 'empty' }, t.stocked));
 
     const w = s.latestWellbeing;
     const notes = el('section', { 'aria-labelledby': 'h-notes' },
-      el('h2', { id: 'h-notes' }, 'Visits and notes'),
-      (s.visits || []).map(v => el('div', { class: 'fact' }, el('strong', {}, v.who), ' visits at ' + clock(v.time) + (v.purpose ? ' · ' + v.purpose : ''))),
-      w ? el('div', { class: 'fact' + (w.redFlag ? ' alert' : '') }, (w.redFlag ? 'Alert: ' : 'Note: ') + w.note, el('div', { class: 'dose-meta' }, clock(w.time))) : null,
-      !(s.visits || []).length && !w ? el('p', { class: 'empty' }, 'Nothing new today.') : null);
+      el('h2', { id: 'h-notes' }, t.notes),
+      (s.visits || []).map(v => {
+        const [who, rest] = t.visits(v.who, clock(v.time), v.purpose);
+        return el('div', { class: 'fact' }, el('strong', {}, who), rest);
+      }),
+      w ? el('div', { class: 'fact' + (w.redFlag ? ' alert' : '') }, (w.redFlag ? t.alert : t.note) + w.note, el('div', { class: 'dose-meta' }, clock(w.time))) : null,
+      !(s.visits || []).length && !w ? el('p', { class: 'empty' }, t.nothingNew) : null);
 
     const next = s.nextDose;
     const counts = s.counts || { taken: 0, total: 0 };
-    app.replaceChildren(
+    // replaceChildren would print a null as the text "null", so leave the toast out when there is none.
+    app.replaceChildren(...[
       el('header', {},
         ring(counts.taken, counts.total),
         el('div', {},
           el('h1', {}, s.recipient.name + ' · ' + dayLabel(s.date)),
-          el('p', { class: 'sub' }, next ? 'Next: ' + next.name + ' at ' + clock(next.time) : counts.taken === counts.total ? 'All doses done for today.' : ''))),
+          el('p', { class: 'sub' }, next ? t.next(next.name, clock(next.time)) : counts.taken === counts.total ? t.allDone : ''))),
       el('div', { class: 'grid' }, doseSection, el('div', { class: 'side' }, supply, notes)),
-      state.toast ? el('div', { class: 'toast' + (state.toast.bad ? ' bad' : ''), role: 'status' }, state.toast.text) : null,
-      el('footer', {}, 'CareCircle coordinates care. It does not give medical advice.'));
+      state.toast && el('div', { class: 'toast' + (state.toast.bad ? ' bad' : ''), role: 'status' }, state.toast.text),
+      el('footer', {}, t.footer)
+    ].filter(Boolean));
   }
 
   /* ---------- size reporting ---------- */
