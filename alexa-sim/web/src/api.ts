@@ -58,11 +58,47 @@ export interface Elicitation {
   elicitationId?: string;
 }
 
+export type Language = 'en' | 'hi';
+
 export interface Speech {
   text: string;
   audio?: string;
   format?: string;
   voice?: string;
+  /** The language the text is in; browser speech picks a matching voice. */
+  lang?: Language;
+  slow?: boolean;
+  /** "Say that again" */
+  repeat?: boolean;
+}
+
+/** The family's live state for one viewer: carecircle://family/{id}/today, pushed on every change. */
+export interface Today {
+  viewer: { id: ProfileId; name: string; role: 'recipient' | 'coordinator' | 'helper'; language: Language };
+  /** Same shape as get_care_status structuredContent */
+  status: Record<string, any>;
+  speech: string;
+  alerts: { id: string; time: string; note: string; reasons: string[]; loggedBy: string; text: string }[];
+  reminder: { key: string; slot: string; time: string; medicationIds: string[]; text: string } | null;
+  updatedAt: string;
+}
+
+export interface FamilyMessage {
+  id: string;
+  kind: 'daily_summary';
+  date: string;
+  title: string;
+  text: string;
+  to: string[];
+  sentAt: string;
+  sentBy: string;
+  delivery: { inbox: boolean; sns: 'sent' | 'failed' | 'off' };
+}
+
+/** Something the device says on its own: a safety alert from the family, or a gentle dose reminder. */
+export interface Announcement extends Speech {
+  kind: 'alert' | 'reminder';
+  id: string;
 }
 
 export interface Warning {
@@ -88,6 +124,7 @@ export interface Health {
   speech: { mode: 'polly' | 'browser'; voice: string | null; detail: string };
   /** The MCP Apps sandbox proxy, on the orchestrator's own origin. */
   sandboxUrl?: string;
+  reminders?: { idleSeconds: number };
 }
 
 async function errorText(res: Response): Promise<string> {
@@ -100,11 +137,12 @@ async function errorText(res: Response): Promise<string> {
 }
 
 /** POST /turn and feed each SSE event to `onEvent` until the stream ends. */
-export async function streamTurn(profile: ProfileId, text: string, onEvent: (e: TurnEvent) => void, signal?: AbortSignal) {
+export async function streamTurn(profile: ProfileId, text: string, onEvent: (e: TurnEvent) => void, opts: { slow?: boolean; signal?: AbortSignal } = {}) {
+  const { slow = false, signal } = opts;
   const res = await fetch('/api/turn', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ profile, text }),
+    body: JSON.stringify({ profile, text, slow }),
     signal
   });
   if (!res.ok || !res.body) throw new Error(await errorText(res));
@@ -179,3 +217,37 @@ export async function fetchHealth(): Promise<Health | null> {
     return null;
   }
 }
+
+export interface DeviceHandlers {
+  today: (t: Today) => void;
+  inbox: (messages: FamilyMessage[]) => void;
+  announcement: (a: Announcement) => void;
+}
+
+/** What one device hears outside its own turns (GET /events). EventSource reconnects by itself. */
+export function openDeviceEvents(profile: ProfileId, on: DeviceHandlers): () => void {
+  const source = new EventSource(`/api/events?profile=${profile}`);
+  source.addEventListener('today', e => on.today(JSON.parse((e as MessageEvent).data)));
+  source.addEventListener('inbox', e => on.inbox(JSON.parse((e as MessageEvent).data).messages));
+  source.addEventListener('announcement', e => on.announcement(JSON.parse((e as MessageEvent).data)));
+  return () => source.close();
+}
+
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    method: 'POST',
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()) as T;
+}
+
+/** Says the current dose reminder now, instead of waiting for the device to be idle. */
+export const remindNow = (profile: ProfileId) => post<{ reminded: boolean; text: string | null }>(`/profiles/${profile}/remind`);
+
+/** set_language over MCP: the person's spoken replies switch language. */
+export const setLanguage = (profile: ProfileId, language: Language) => post<{ language: Language; text: string }>(`/profiles/${profile}/language`, { language });
+
+/** send_daily_summary over MCP, as if the person asked for it. */
+export const sendSummary = (profile: ProfileId) => post<{ text: string }>(`/profiles/${profile}/summary`);

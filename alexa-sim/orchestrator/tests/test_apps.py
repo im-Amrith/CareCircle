@@ -49,8 +49,14 @@ def test_status_result_carries_the_view_and_it_loads_once(apps_sim: str) -> None
         view = r.json()
         assert view["html"].lower().startswith("<!doctype html>")
         assert view["csp"] == {"connectDomains": [], "resourceDomains": []}
-    reads = [e for e in rpc_log(apps_sim, "rose") if e["method"] == "resources/read" and e["dir"] == "out"]
+    reads = [e for e in rpc_log(apps_sim, "rose") if e["method"] == "resources/read" and e["dir"] == "out" and e["body"]["params"]["uri"] == DASHBOARD]
     assert len(reads) == 1  # cached for the session
+
+    # A new session reads the view again.
+    assert httpx.post(f"{apps_sim}/profiles/rose/reset", timeout=30).status_code == 200
+    assert httpx.get(f"{apps_sim}/profiles/rose/ui-resource", params={"uri": DASHBOARD}, timeout=30).status_code == 200
+    reads = [e for e in rpc_log(apps_sim, "rose") if e["method"] == "resources/read" and e["dir"] == "out" and e["body"]["params"]["uri"] == DASHBOARD]
+    assert len(reads) == 2
 
     assert httpx.get(f"{apps_sim}/profiles/rose/ui-resource", params={"uri": "carecircle://family/fam-rose/care-plan"}).status_code == 400
 

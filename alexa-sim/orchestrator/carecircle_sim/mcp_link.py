@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import json
 import logging
 import threading
 import time
@@ -179,6 +180,17 @@ class ProfileLink:
         self._lock = threading.Lock()
         self._client: MCPClient | None = None
         self._start_lock = asyncio.Lock()
+        # Live family state (resources/subscribe on today and inbox).
+        self.live_uris: dict[str, str] = {}  # "today" / "inbox" -> uri
+        self._live_checked = False
+        self.today: dict[str, Any] | None = None
+        self.inbox: list[dict[str, Any]] = []
+        self.language = "en"
+        self.last_reply: str | None = None
+        self.last_activity = time.time()
+        # Alert ids already announced on this device, and reminder keys already given. Kept across sessions.
+        self.announced: set[str] = set()
+        self.reminded: set[str] = set()
 
     # ---------- lifecycle ----------
 
@@ -215,9 +227,14 @@ class ProfileLink:
                 await asyncio.to_thread(client.stop, None, None, None)
                 raise
             self._client = client
+        await self._subscribe_live()
 
     async def stop(self) -> None:
         client, self._client = self._client, None
+        self._ui_resources.clear()  # views are cached per session
+        self.live_uris.clear()
+        self._live_checked = False
+        self.last_reply = None
         self.broker.cancel_profile(self.profile)
         if client is not None:
             with contextlib.suppress(Exception):
@@ -234,6 +251,70 @@ class ProfileLink:
             structured=dict(result.get("structuredContent") or {}),
             is_error=result.get("status") == "error",
         )
+
+    # ---------- live family resources ----------
+
+    def _session_call(self, coro_fn: Any) -> Any:
+        """Runs `coro_fn(session)` on the MCP client's own loop. Strands' MCPClient has no
+        subscribe_resource, so the simulator reaches its ClientSession directly (FL-12)."""
+        assert self._client is not None
+        client = self._client
+        session = client._background_thread_session  # noqa: SLF001
+        return client._invoke_on_background_thread(coro_fn(session)).result(timeout=15)  # noqa: SLF001
+
+    async def _subscribe_live(self) -> None:
+        if self._live_checked or self._client is None:
+            return
+        self._live_checked = True
+        try:
+            listed = await asyncio.to_thread(self._client.list_resources_sync)
+            for res in listed.resources:
+                uri = str(res.uri)
+                for kind in ("today", "inbox"):
+                    if uri.endswith(f"/{kind}"):
+                        self.live_uris[kind] = uri
+            for uri in self.live_uris.values():
+                await asyncio.to_thread(self._session_call, lambda s, u=uri: s.subscribe_resource(u))
+            for uri in self.live_uris.values():
+                await self.refresh(uri)
+        except Exception:  # noqa: BLE001 - a server without live resources still works
+            log.exception("could not subscribe to live resources for %s", self.profile)
+
+    # Set by the app: called after each `today` refresh (alert announcements).
+    on_today: Any = None
+
+    async def refresh(self, uri: str) -> None:
+        """Re-reads a live resource and tells the browser. Runs on the app loop."""
+        if self._client is None:
+            return
+        try:
+            result = await asyncio.to_thread(self._client.read_resource_sync, uri)
+        except Exception:  # noqa: BLE001
+            log.exception("could not read %s", uri)
+            return
+        contents = result.model_dump(by_alias=True, exclude_none=True, mode="json")["contents"]
+        data = json.loads(contents[0]["text"]) if contents and "text" in contents[0] else {}
+        if uri == self.live_uris.get("today"):
+            self.today = data
+            self.language = (data.get("viewer") or {}).get("language", "en")
+            self.bus.publish(self.profile, "today", data)
+            if self.on_today is not None:
+                await self.on_today(self)
+        elif uri == self.live_uris.get("inbox"):
+            self.inbox = data.get("messages", [])
+            self.bus.publish(self.profile, "inbox", {"messages": self.inbox})
+
+    def _on_resource_updated(self, uri: str) -> None:
+        """Called on the MCP thread; the re-read happens on the app loop."""
+        loop = self.bus.loop
+        if loop is not None and not loop.is_closed():
+            loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self.refresh(uri)))
+
+    def new_alerts(self) -> list[dict[str, Any]]:
+        """Safety alerts someone else logged that this device hasn't announced yet."""
+        alerts = [a for a in (self.today or {}).get("alerts", []) if a.get("loggedBy") != self.profile and a.get("id") not in self.announced]
+        self.announced.update(a["id"] for a in alerts)
+        return alerts
 
     # ---------- MCP Apps ----------
 
@@ -337,6 +418,11 @@ class ProfileLink:
             if method == "server/discover" and kind == "error":
                 note = "Version probe for MCP 2026-07-28. The server speaks 2025-11-25, so the client falls back to initialize."
 
+        if kind == "notification" and method == "notifications/resources/updated" and direction == "in":
+            uri = (body.get("params") or {}).get("uri")
+            if uri:
+                self._on_resource_updated(uri)
+
         if kind == "request" and method == "tools/call" and direction == "out" and not _from_app(body):
             params = body.get("params") or {}
             name = params.get("name", "")
@@ -402,12 +488,17 @@ class Links:
     def __init__(self, mcp_url: str, bus: Bus, broker: ElicitationBroker) -> None:
         self.mcp_url, self.bus, self.broker = mcp_url, bus, broker
         self._links: dict[str, ProfileLink] = {}
+        self.on_today: Any = None
 
     def get(self, profile: str) -> ProfileLink:
         link = self._links.get(profile)
         if link is None:
             link = self._links[profile] = ProfileLink(profile, self.mcp_url, self.bus, self.broker)
+            link.on_today = self.on_today
         return link
+
+    def all(self) -> list[ProfileLink]:
+        return list(self._links.values())
 
     async def stop_all(self) -> None:
         await asyncio.gather(*(link.stop() for link in self._links.values()), return_exceptions=True)

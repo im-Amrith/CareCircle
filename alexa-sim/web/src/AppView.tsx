@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { appToolCall, fetchUiResource, type ProfileId, type ToolResult, type UiResource } from './api';
+import { appToolCall, fetchUiResource, type ProfileId, type Today, type ToolResult, type UiResource } from './api';
 
 /**
  * Host side of MCP Apps (io.modelcontextprotocol/ui, spec 2026-01-26) for one tool result.
@@ -10,7 +10,10 @@ import { appToolCall, fetchUiResource, type ProfileId, type ToolResult, type UiR
  *   proxy -> host  ui/notifications/sandbox-proxy-ready    host -> proxy  sandbox-resource-ready {html, csp}
  *   view  -> host  ui/initialize, ui/notifications/initialized, size-changed,
  *                  tools/call (relayed to the orchestrator, app-visible tools only), ui/message, ui/open-link
- *   host  -> view  ui/notifications/tool-input, tool-result, ui/resource-teardown
+ *   host  -> view  ui/notifications/tool-input, tool-result, host-context-changed, ui/resource-teardown
+ *
+ * Live updates: the orchestrator subscribes to the family's `today` resource. When it changes
+ * (someone else logged a dose), a view showing today gets a fresh tool-result with the new status.
  */
 
 export const MCP_APPS_PROTOCOL = '2026-01-26';
@@ -28,17 +31,26 @@ interface Props {
   onMessage: (text: string) => boolean;
   /** Loading or the handshake failed: show the native card instead. */
   onFail: (reason: string) => void;
+  /** The family's live state for this profile (resources/subscribe); refreshes a view of today. */
+  live?: Today | null;
+  /** BCP 47 locale for the view (hi-IN when the person chose Hindi). */
+  locale: string;
+  /** Larger type for older readers, sent as a host style variable. */
+  largeText: boolean;
 }
 
-export function AppView({ profile, result, args, sandboxUrl, onMessage, onFail }: Props) {
+/** Host style variables (MCP Apps hostContext.styles). The dashboard sizes its type from this one. */
+const styleFor = (large: boolean) => ({ variables: { '--font-text-md-size': large ? '20px' : '16px' } });
+
+export function AppView({ profile, result, args, sandboxUrl, onMessage, onFail, live, locale, largeText }: Props) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [view, setView] = useState<UiResource | null>(null);
   const [height, setHeight] = useState(320);
   const [ready, setReady] = useState(false);
   const readyRef = useRef(ready);
   readyRef.current = ready;
-  const latest = useRef({ onMessage, onFail, result, args });
-  latest.current = { onMessage, onFail, result, args };
+  const latest = useRef({ onMessage, onFail, result, args, locale, largeText });
+  latest.current = { onMessage, onFail, result, args, locale, largeText };
 
   const uri = result.uiResourceUri!;
   const src = `${sandboxUrl}?host=${encodeURIComponent(window.location.origin)}`;
@@ -82,7 +94,8 @@ export function AppView({ profile, result, args, sandboxUrl, onMessage, onFail }
               displayMode: 'inline',
               availableDisplayModes: ['inline'],
               containerDimensions: { width: Math.round(box?.width ?? 0), maxHeight: MAX_HEIGHT },
-              locale: navigator.language,
+              locale: latest.current.locale,
+              styles: styleFor(latest.current.largeText),
               timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
               platform: 'web',
               deviceCapabilities: { touch: navigator.maxTouchPoints > 0, hover: window.matchMedia('(hover: hover)').matches }
@@ -145,6 +158,43 @@ export function AppView({ profile, result, args, sandboxUrl, onMessage, onFail }
       window.removeEventListener('message', onMessageEvent);
     };
   }, [view, profile, result.id, result.name, sandboxOrigin]);
+
+  // Settings changed on the device: tell the view (ui/notifications/host-context-changed).
+  const sentContext = useRef('');
+  useEffect(() => {
+    const key = `${locale}|${largeText}`;
+    if (!ready) {
+      sentContext.current = key;
+      return;
+    }
+    if (sentContext.current === key) return;
+    sentContext.current = key;
+    frame.current?.contentWindow?.postMessage(
+      { jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { locale, styles: styleFor(largeText) } },
+      sandboxOrigin
+    );
+  }, [locale, largeText, ready, sandboxOrigin]);
+
+  // Someone in the family changed today's care: a view of today shows it straight away.
+  const showsToday = result.structuredContent?.isToday !== false;
+  const sentLive = useRef<Today | null | undefined>(undefined);
+  useEffect(() => {
+    if (!ready || !showsToday || !live || live === sentLive.current) return;
+    if (sentLive.current === undefined) {
+      // The first snapshot is what the view already shows.
+      sentLive.current = live;
+      return;
+    }
+    sentLive.current = live;
+    frame.current?.contentWindow?.postMessage(
+      {
+        jsonrpc: '2.0',
+        method: 'ui/notifications/tool-result',
+        params: { content: [{ type: 'text', text: live.speech }], structuredContent: live.status, isError: false }
+      },
+      sandboxOrigin
+    );
+  }, [live, ready, showsToday, sandboxOrigin]);
 
   // Tell the view before it goes away, as the spec asks; it has no state to save, so don't wait.
   useEffect(() => {

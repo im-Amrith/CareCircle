@@ -5,6 +5,10 @@ POST /turn                   {profile, text} -> SSE: transcript, tool_call, tool
 POST /elicitation/{id}       {action, content} answers a pending elicitation
 POST /profiles/{p}/connect   opens the profile's MCP session (initialize + tools/list)
 POST /profiles/{p}/reset     ends the session and forgets the conversation
+GET  /events?profile=        SSE for one device outside turns: today (live family status), inbox, announcement
+POST /profiles/{p}/remind    says the current dose reminder now (the device otherwise waits until it's idle)
+POST /profiles/{p}/language  {language}: set_language over MCP (en or hi)
+POST /profiles/{p}/summary   send_daily_summary over MCP, as if asked aloud
 GET  /profiles/{p}/ui-resource?uri=ui://...   an MCP App view (resources/read, cached per session)
 POST /profiles/{p}/app/tools/call             {name, arguments}: a view's tools/call, app-visible tools only
 GET  /sandbox?host=<origin>  the MCP Apps sandbox proxy page; the web app frames it from this other origin
@@ -34,6 +38,7 @@ from .agent import AgentPool
 from .bus import Bus
 from .config import Settings, load_settings
 from .mcp_link import AppToolDenied, ElicitationBroker, Links
+from .proactive import Proactive
 from .speech import Speech
 from .turns import TurnRunner
 
@@ -44,6 +49,16 @@ log = logging.getLogger("carecircle.app")
 class TurnIn(BaseModel):
     profile: str
     text: str = Field(min_length=1, max_length=500)
+    # Slower speech for older listeners (Polly prosody rate).
+    slow: bool = False
+
+
+class LanguageIn(BaseModel):
+    language: Literal["en", "hi"]
+
+
+# Events a device hears outside its own turns.
+DEVICE_EVENTS = {"today", "inbox", "announcement"}
 
 
 class AppToolCall(BaseModel):
@@ -79,6 +94,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         state["speech"] = speech
         state["agents"] = agents
         state["runner"] = TurnRunner(settings, bus, speech, agents)
+        proactive = Proactive(links, bus, state["runner"], agents, locks, settings.reminder_idle_s)
+        state["proactive"] = proactive
+        links.on_today = proactive.on_today
+        for link in links.all():
+            link.on_today = proactive.on_today
+        reminders = asyncio.create_task(proactive.loop())
         log.info(
             "CareCircle simulator %s: MCP %s, brain %s, speech %s",
             __version__,
@@ -87,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             speech.detail,
         )
         yield
+        reminders.cancel()
         await links.stop_all()
 
     app = FastAPI(title="CareCircle Alexa+ simulator", version=__version__, lifespan=lifespan)
@@ -117,6 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "speech": {"mode": speech.mode, "voice": speech.voice, "detail": speech.detail},
             # The web app reaches us through its /api proxy, which keeps our host, so this is our own origin.
             "sandboxUrl": f"{str(request.base_url).rstrip('/')}/sandbox",
+            "reminders": {"idleSeconds": settings.reminder_idle_s},
             "profiles": [{"id": k, "name": v["name"], "connected": links.get(k).connected} for k, v in settings.profiles.items()],
         }
 
@@ -138,6 +161,61 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if state.get("agents"):
             state["agents"].reset(profile)
         return {"profile": profile, "reset": True}
+
+    @app.get("/events")
+    async def events(profile: str, request: Request) -> StreamingResponse:
+        check_profile(profile)
+        link = links.get(profile)
+
+        async def stream() -> AsyncIterator[bytes]:
+            queue = bus.subscribe(profile)
+            try:
+                # Start from the current state, then follow changes.
+                with contextlib.suppress(Exception):
+                    await link.ensure_started()
+                if link.today is not None:
+                    yield _sse("today", link.today)
+                yield _sse("inbox", {"messages": link.inbox})
+                while True:
+                    try:
+                        kind, data = await asyncio.wait_for(queue.get(), timeout=15)
+                    except TimeoutError:
+                        if await request.is_disconnected():
+                            return
+                        yield b": keepalive\n\n"
+                        continue
+                    if kind in DEVICE_EVENTS:
+                        yield _sse(kind, data)
+            finally:
+                bus.unsubscribe(profile, queue)
+
+        return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.post("/profiles/{profile}/remind")
+    async def remind(profile: str) -> dict[str, Any]:
+        check_profile(profile)
+        link = links.get(profile)
+        await link.ensure_started()
+        event = await state["proactive"].remind(link, force=True)
+        return {"reminded": event is not None, "text": event["text"] if event else None}
+
+    @app.post("/profiles/{profile}/language")
+    async def language(profile: str, body: LanguageIn) -> dict[str, Any]:
+        check_profile(profile)
+        link = links.get(profile)
+        result = await link.call_tool("set_language", {"language": body.language})
+        if result.is_error:
+            raise HTTPException(502, result.text)
+        link.language = body.language
+        return {"language": body.language, "text": result.text}
+
+    @app.post("/profiles/{profile}/summary")
+    async def summary(profile: str) -> dict[str, Any]:
+        check_profile(profile)
+        result = await links.get(profile).call_tool("send_daily_summary", {})
+        if result.is_error:
+            raise HTTPException(502, result.text)
+        return {"text": result.text, "message": result.structured}
 
     @app.get("/profiles/{profile}/ui-resource")
     async def ui_resource(profile: str, uri: str) -> dict[str, Any]:
@@ -198,7 +276,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async def stream() -> AsyncIterator[bytes]:
             async with lock:
                 queue = bus.subscribe(body.profile)
-                task = asyncio.create_task(runner.run(link, body.text.strip()))
+                task = asyncio.create_task(runner.run(link, body.text.strip(), body.slow))
                 try:
                     while True:
                         getter = asyncio.create_task(queue.get())

@@ -59,6 +59,39 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .segmented button { background: transparent; color: var(--ink-2); border: 0; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
 .segmented button.on { background: var(--panel-2); color: var(--ink); box-shadow: inset 0 0 0 1px var(--cyan); }
 
+/* ---------- panes (one device, or two side by side in Family view) ---------- */
+.pane { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; }
+.stage-family { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; gap: 24px; }
+.stage-family .controls { flex-direction: column; align-items: center; gap: 8px; }
+@media (max-width: 1400px) { .stage-family { grid-template-columns: minmax(0, 1fr); } }
+.settings { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: center; color: var(--ink-2); font-size: 0.9rem; }
+.segmented-small button { padding: 3px 12px; font-size: 0.88rem; }
+.segmented button:disabled { opacity: 0.4; cursor: not-allowed; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.toggle input { width: 1.1em; height: 1.1em; accent-color: var(--cyan); }
+.btn-small { padding: 4px 12px; font-size: 0.88rem; }
+.badge-button { cursor: pointer; font: inherit; font-size: 0.82rem; }
+
+/* ---------- notices: alerts, reminders and messages the device shows by itself ---------- */
+.notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.notice { border-radius: var(--radius); padding: 10px 14px; border: 1px solid var(--card-line); background: var(--card); animation: rise 0.25s ease-out; }
+.notice-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.notice-close { padding: 2px 8px; }
+.notice-text { margin: 4px 0 0; font-size: clamp(1rem, 2.4cqw, 1.4rem); line-height: 1.35; }
+.notice-pre { white-space: pre-line; font-size: clamp(0.92rem, 2cqw, 1.1rem); }
+.notice-alert { border-color: var(--red); background: linear-gradient(0deg, rgba(248, 113, 113, 0.16), rgba(248, 113, 113, 0.16)), var(--card); }
+.notice-alert strong { color: #fecaca; }
+.notice-reminder { border-color: var(--amber); background: linear-gradient(0deg, rgba(251, 191, 36, 0.12), rgba(251, 191, 36, 0.12)), var(--card); }
+.notice-reminder strong { color: #fde68a; }
+.notice-message { border-color: rgba(52, 211, 153, 0.6); }
+.notice-message strong { color: var(--green); }
+.dot-notice-alert { color: #fecaca; }
+.dot-notice-reminder { color: #fde68a; }
+@keyframes rise { from { transform: translateY(8px); opacity: 0; } }
+
+/* Large text: everything the device says gets bigger; MCP App views scale through host context. */
+.screen-large .turn > :not(.app-view), .screen-large .notices, .screen-large .screen-idle { zoom: 1.22; }
+
 /* ---------- buttons ---------- */
 .btn { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 10px; padding: 8px 16px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
 .btn:hover:not(:disabled) { border-color: var(--ink-2); }
@@ -101,6 +134,8 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .screen > .ring-listening { background: linear-gradient(90deg, var(--blue), var(--cyan), var(--blue)); background-size: 200% 100%; animation: sweep 1.2s linear infinite; }
 .screen > .ring-thinking { background: linear-gradient(90deg, transparent, var(--cyan), transparent); background-size: 50% 100%; background-repeat: no-repeat; animation: slide 1s ease-in-out infinite alternate; }
 .screen > .ring-speaking { background: var(--cyan); animation: pulse 1.1s ease-in-out infinite; }
+/* Echo devices show a yellow light for notifications. */
+.screen > .ring-notify { background: var(--amber); animation: pulse 1.6s ease-in-out infinite; }
 
 /* Dot: only the light ring and the transcript */
 .dot-wrap { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 20px 0; width: 100%; max-width: 640px; }
@@ -110,6 +145,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .dot > .ring-listening { border-color: var(--cyan); box-shadow: 0 0 30px rgba(34, 211, 238, 0.7); animation: spin-glow 1.4s linear infinite; border-top-color: var(--blue); }
 .dot > .ring-thinking { border-color: rgba(34, 211, 238, 0.45); border-top-color: var(--cyan); animation: spin 0.9s linear infinite; }
 .dot > .ring-speaking { border-color: var(--cyan); box-shadow: 0 0 34px rgba(34, 211, 238, 0.75); animation: pulse 1.1s ease-in-out infinite; }
+.dot > .ring-notify { border-color: var(--amber); box-shadow: 0 0 34px rgba(251, 191, 36, 0.7); animation: pulse 1.6s ease-in-out infinite; }
 .dot-caption { text-align: center; min-height: 6rem; display: flex; flex-direction: column; gap: 8px; }
 .dot-caption .said-alexa { font-size: 1.5rem; }
 .dot-caption .said-user { font-size: 1.15rem; }

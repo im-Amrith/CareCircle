@@ -46,6 +46,8 @@ class Settings:
     port: int = 8100
     # Pages allowed to embed the MCP Apps sandbox proxy (the simulator web app).
     web_origins: tuple[str, ...] = ("http://127.0.0.1:5173", "http://localhost:5173")
+    # Seconds a device must be quiet before it gives a gentle dose reminder; 0 turns reminders off.
+    reminder_idle_s: float = 45
     profiles: dict[str, dict[str, str]] = field(default_factory=lambda: dict(PROFILES))
 
 
@@ -69,5 +71,6 @@ def load_settings() -> Settings:
         aws_region=env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION") or Settings.aws_region,
         polly_voices=tuple(v.strip() for v in env.get("POLLY_VOICES", "Kajal,Joanna").split(",") if v.strip()),
         port=int(env.get("PORT", Settings.port)),
+        reminder_idle_s=float(env.get("REMINDER_IDLE_S", Settings.reminder_idle_s)),
         web_origins=tuple(o.strip().rstrip("/") for o in env.get("WEB_ORIGINS", ",".join(Settings.web_origins)).split(",") if o.strip()),
     )

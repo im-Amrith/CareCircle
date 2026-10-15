@@ -6,8 +6,12 @@ import base64
 import logging
 from dataclasses import dataclass
 from typing import Any
+from xml.sax.saxutils import escape
 
 log = logging.getLogger("carecircle.speech")
+
+BILINGUAL_HINDI = {"Kajal"}
+SLOW_RATE = "85%"
 
 
 @dataclass
@@ -39,9 +43,22 @@ class Speech:
                 log.warning("Polly voice %s failed: %s", voice, err)
         return cls(detail="Polly failed, using browser speech. " + "; ".join(errors))
 
-    def synthesize(self, text: str) -> str | None:
+    def can_speak(self, language: str) -> bool:
+        """Kajal speaks Indian English and Hindi; other voices only English."""
+        return self.mode == "polly" and (language == "en" or self.voice in BILINGUAL_HINDI)
+
+    def synthesize(self, text: str, language: str = "en", slow: bool = False) -> str | None:
         """Base64 MP3, or None to let the browser speak."""
-        if self.mode != "polly" or not text:
+        if not text or not self.can_speak(language):
             return None
-        resp = self.client.synthesize_speech(Text=text[:2900], VoiceId=self.voice, Engine="neural", OutputFormat="mp3")
+        args: dict[str, Any] = {"VoiceId": self.voice, "Engine": "neural", "OutputFormat": "mp3"}
+        if language == "hi":
+            args["LanguageCode"] = "hi-IN"
+        if slow:
+            # Neural voices support <prosody rate>; slower speech is easier to follow for older listeners.
+            args["TextType"] = "ssml"
+            args["Text"] = f'<speak><prosody rate="{SLOW_RATE}">{escape(text[:2800])}</prosody></speak>'
+        else:
+            args["Text"] = text[:2900]
+        resp = self.client.synthesize_speech(**args)
         return base64.b64encode(resp["AudioStream"].read()).decode("ascii")

@@ -58,6 +58,9 @@ class Bus:
     def unsubscribe(self, profile: str, q: asyncio.Queue[Event]) -> None:
         self._subs[profile].discard(q)
 
+    def has_listeners(self, profile: str) -> bool:
+        return bool(self._subs[profile])
+
     def rpc_backlog(self, profile: str, after: int = 0) -> list[dict[str, Any]]:
         with self._lock:
             return [e for e in self._rpc[profile] if e["seq"] > after]
