@@ -1,21 +1,16 @@
+import { randomUUID } from 'node:crypto';
 import * as z from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { SLOTS, type DoseLog, type Medication, type Slot } from '../store/types.js';
-import {
-  DEFAULT_REFILL_WINDOW_DAYS,
-  doseStates,
-  isGenericPhrase,
-  matchMedication,
-  refillAlerts,
-  safetyCheck,
-  slotToLog,
-  supply,
-  type DoseState
-} from '../domain/care.js';
-import { addDays, localParts, spokenDate, spokenTime, toMinutes } from '../domain/time.js';
-import { countWord, greeting, listJoin, plural, sentences } from '../domain/speech.js';
+import { LANGUAGES, SLOTS, type DoseLog, type Medication, type Slot } from '../store/types.js';
+import { DEFAULT_REFILL_WINDOW_DAYS, isGenericPhrase, matchMedication, refillAlerts, safetyCheck, slotToLog, supply } from '../domain/care.js';
+import { localParts, spokenDate, spokenTime, toMinutes } from '../domain/time.js';
+import { listJoin, plural, sentences } from '../domain/speech.js';
+import { dateHi, listJoinHi, REASON_HI, SLOT_HI, timeHi } from '../domain/hindi.js';
 import { OrderOut, openOrders, orderOut, orderSentence } from './refills.js';
-import { CareError, guarded, ok, requireRole, resolveCaller, subject, type Caller, type Deps } from './context.js';
+import { careStatus, doseOut, supplyOut, todayContext } from './status.js';
+import { sendDailySummary } from '../notify/digest.js';
+import { CARE_DASHBOARD_URI, uiMeta } from './apps.js';
+import { CareError, guarded, ok, requireRole, resolveCaller, subject, type Deps } from './context.js';
 
 /* ---------- Shared schemas ---------- */
 
@@ -43,30 +38,6 @@ const SupplyOut = z.object({
   order: OrderOut.nullable().describe('An open refill order for this medicine, if one exists')
 });
 
-function doseOut(d: DoseState) {
-  return {
-    medicationId: d.medicationId,
-    name: d.name,
-    strength: d.strength,
-    slot: d.slot,
-    time: d.time,
-    pills: d.pills,
-    status: d.status,
-    ...(d.loggedAt ? { loggedAt: d.loggedAt } : {})
-  };
-}
-
-function supplyOut(s: ReturnType<typeof supply>) {
-  return {
-    medicationId: s.medicationId,
-    name: s.name,
-    strength: s.strength,
-    pillsOnHand: s.pillsOnHand,
-    daysLeft: s.daysLeft,
-    runsOutOn: s.runsOutOn
-  };
-}
-
 const SLOT_PHRASE: Record<Slot, string> = {
   morning: 'this morning',
   noon: 'at lunchtime',
@@ -76,13 +47,6 @@ const SLOT_PHRASE: Record<Slot, string> = {
 
 function medLabel(d: { name: string }) {
   return d.name;
-}
-
-async function todayContext(deps: Deps, caller: Caller, date: string) {
-  const meds = await deps.store.listMedications(caller.family.id);
-  const logs = await deps.store.listDoseLogs(caller.family.id, date, date);
-  const states = doseStates(caller.family, meds, logs, date, caller.now);
-  return { meds, logs, states };
 }
 
 /* ---------- Tools ---------- */
@@ -101,6 +65,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
       }),
       outputSchema: z.object({
         date: z.string(),
+        isToday: z.boolean(),
         recipient: z.object({ id: z.string(), name: z.string() }),
         counts: z.object({
           total: z.number(),
@@ -119,112 +84,14 @@ export function registerTools(server: McpServer, deps: Deps): void {
         refillAlerts: z.array(SupplyOut),
         missedLast7Days: z.number()
       }),
-      annotations: { title: "Today's care status", readOnlyHint: true, openWorldHint: false }
+      annotations: { title: "Today's care status", readOnlyHint: true, openWorldHint: false },
+      // The dashboard re-reads status after the person taps Mark taken.
+      _meta: uiMeta(['model', 'app'], CARE_DASHBOARD_URI)
     },
     guarded(async ({ date, detail }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
-      const day = date ?? caller.local.date;
-      const { meds, states } = await todayContext(deps, caller, day);
-      const count = (s: DoseState['status']) => states.filter(d => d.status === s).length;
-      const counts = {
-        total: states.length,
-        taken: count('taken'),
-        due: count('due'),
-        upcoming: count('upcoming'),
-        missed: count('missed'),
-        skipped: count('skipped')
-      };
-      const next = states.find(d => d.status === 'due') ?? states.find(d => d.status === 'upcoming') ?? null;
-
-      const members = await deps.store.listMembers(caller.family.id);
-      const nameOf = (id: string) => members.find(m => m.id === id)?.name ?? id;
-      const visits = (await deps.store.listVisits(caller.family.id, day, day)).map(v => ({
-        who: nameOf(v.who),
-        time: v.time,
-        purpose: v.purpose
-      }));
-      const notes = await deps.store.listWellbeing(caller.family.id, addDays(day, -1), day);
-      const latest = notes.at(-1);
-      const alerts = refillAlerts(meds, caller.local.date);
-      const orders = await openOrders(deps, caller);
-
-      const weekFrom = addDays(caller.local.date, -7);
-      const weekTo = addDays(caller.local.date, -1);
-      const weekLogs = await deps.store.listDoseLogs(caller.family.id, weekFrom, weekTo);
-      let missedLast7Days = 0;
-      for (let i = 1; i <= 7; i++) {
-        const d = addDays(caller.local.date, -i);
-        missedLast7Days += doseStates(caller.family, meds, weekLogs, d, caller.now).filter(s => s.status === 'missed').length;
-      }
-
-      // ---- Spoken summary ----
-      const who = subject(caller);
-      const isToday = day === caller.local.date;
-      const due = states.filter(d => d.status === 'due');
-      const missedToday = states.filter(d => d.status === 'missed');
-      const parts: string[] = [];
-      if (caller.isRecipient && isToday) parts.push(`${greeting(caller.local.minutes)}, ${caller.recipient.name}.`);
-      if (isToday) {
-        const takenWord = counts.taken === counts.total ? 'all' : counts.taken === 0 ? 'none' : countWord(counts.taken);
-        parts.push(
-          caller.isRecipient
-            ? `You've taken ${takenWord} of your ${plural(counts.total, 'dose')} today.`
-            : `${who.has} taken ${takenWord} of ${caller.recipient.pronoun === 'he' ? 'his' : caller.recipient.pronoun === 'she' ? 'her' : 'their'} ${plural(counts.total, 'dose')} so far today.`
-        );
-        if (due.length) {
-          parts.push(`${listJoin(due.map(medLabel))} ${due.length === 1 ? 'is' : 'are'} due now.`);
-        } else if (next) {
-          parts.push(`Next is ${next.name} at ${spokenTime(next.time)}.`);
-        }
-        if (missedToday.length) {
-          const bySlot = new Map<Slot, string[]>();
-          for (const d of missedToday) bySlot.set(d.slot, [...(bySlot.get(d.slot) ?? []), d.name]);
-          const groups = [...bySlot].map(([slot, names]) => `${listJoin(names)} from ${slot === 'noon' ? 'lunchtime' : `the ${slot}`}`);
-          parts.push(`Not logged yet: ${listJoin(groups)}.`);
-        }
-      } else {
-        parts.push(`On ${spokenDate(day, caller.local.date)}, ${who.name} took ${counts.taken} of ${plural(counts.total, 'dose')}.`);
-        if (missedToday.length) parts.push(`Missed: ${listJoin(missedToday.map(d => d.name))}.`);
-      }
-      for (const v of visits) parts.push(`${v.who} visits at ${spokenTime(v.time)}.`);
-      if (latest && (detail === 'full' || latest.date === caller.local.date)) {
-        const said = latest.note.replace(/\.$/, '');
-        const quoted = said[0].toLowerCase() + said.slice(1);
-        parts.push(
-          caller.isRecipient
-            ? `You mentioned: ${quoted}.`
-            : `${who.pronoun === 'they' ? 'They' : who.pronoun[0].toUpperCase() + who.pronoun.slice(1)} mentioned: ${quoted}.`
-        );
-      }
-      if (alerts.length) {
-        const a = alerts[0];
-        parts.push(`${a.name} runs low: about ${plural(a.daysLeft, 'day')} left.`);
-        const order = orders.get(a.medicationId);
-        if (order) parts.push(orderSentence(order, caller.now, caller.local.date));
-      }
-      if (detail === 'full') parts.push(`In the past week, ${plural(missedLast7Days, 'dose')} ${missedLast7Days === 1 ? 'was' : 'were'} missed.`);
-
-      return ok(
-        {
-          date: day,
-          recipient: { id: caller.recipient.id, name: caller.recipient.name },
-          counts,
-          doses: states.map(doseOut),
-          nextDose: next ? doseOut(next) : null,
-          visits,
-          latestWellbeing: latest
-            ? { note: latest.note, severity: latest.severity, date: latest.date, time: latest.time, redFlag: latest.redFlag }
-            : null,
-          refillAlerts: await Promise.all(
-            alerts.map(async a => {
-              const order = orders.get(a.medicationId);
-              return { ...supplyOut(a), order: order ? await orderOut(deps, order, caller.now) : null };
-            })
-          ),
-          missedLast7Days
-        },
-        sentences(...parts)
-      );
+      const { structured, speech } = await careStatus(deps, caller, date ?? caller.local.date, detail);
+      return ok(structured, speech);
     })
   );
 
@@ -254,7 +121,8 @@ export function registerTools(server: McpServer, deps: Deps): void {
           })
         )
       }),
-      annotations: { title: 'Medication schedule', readOnlyHint: true, openWorldHint: false }
+      annotations: { title: 'Medication schedule', readOnlyHint: true, openWorldHint: false },
+      _meta: uiMeta(['model'])
     },
     guarded(async ({ when }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
@@ -277,9 +145,17 @@ export function registerTools(server: McpServer, deps: Deps): void {
       );
       medications.sort((a, b) => toMinutes(a.schedule[0]?.time ?? '23:59') - toMinutes(b.schedule[0]?.time ?? '23:59'));
 
-      const who = subject(caller);
       let speech: string;
-      if (when) {
+      if (caller.lang === 'hi') {
+        const whom = caller.isRecipient ? 'आपको' : `${caller.recipient.name} को`;
+        if (when) {
+          speech = medications.length
+            ? `आज ${SLOT_HI[when]} ${timeHi(caller.family.slots[when]).split(' ').slice(1).join(' ')} ${whom} लेनी है: ${listJoinHi(medications.map(m => `${m.name} ${m.strength}`))}।`
+            : `${SLOT_HI[when]} के लिए कोई दवा नहीं है।`;
+        } else {
+          speech = `${whom} ${medications.length} दवाइयाँ लेनी होती हैं: ${listJoinHi(medications.map(m => m.name))}।`;
+        }
+      } else if (when) {
         const takes = caller.isRecipient ? 'you take' : `${caller.recipient.name} takes`;
         const instructions = [...new Set(medications.map(m => m.schedule[0]?.instructions ?? ''))];
         const shared = instructions.length === 1 && instructions[0] ? `, ${instructions[0]}` : '';
@@ -294,7 +170,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
           medications.map(m => `${m.name} for ${m.purpose}`)
         )}.`;
       }
-      return ok({ when: when ?? null, medications }, speech);
+      return ok({ when: when ?? null, medications }, sentences(speech));
     })
   );
 
@@ -324,7 +200,9 @@ export function registerTools(server: McpServer, deps: Deps): void {
         options: z.array(z.object({ id: z.string(), name: z.string(), purpose: z.string() })),
         nextDose: DoseOut.nullable()
       }),
-      annotations: { title: 'Log a dose', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+      annotations: { title: 'Log a dose', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      // The dashboard's Mark taken button calls this directly.
+      _meta: uiMeta(['model', 'app'])
     },
     guarded(async ({ spoken_name, medication_ids, slot, status, taken_at }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
@@ -333,6 +211,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
       const { meds, states } = await todayContext(deps, caller, day);
       const base = { date: day, logged: [], alreadyLogged: [], options: [], nextDose: null };
       const who = subject(caller);
+      const hi = caller.lang === 'hi';
 
       // 1. Work out which medicines.
       let targets: Medication[];
@@ -345,13 +224,17 @@ export function registerTools(server: McpServer, deps: Deps): void {
         if (match.kind === 'none') {
           return ok(
             { ...base, result: 'not_found' as const, options: meds.map(m => ({ id: m.id, name: m.name, purpose: m.purpose })) },
-            `I couldn't match "${spoken_name}" to a medicine. ${caller.isRecipient ? 'Your' : `${caller.recipient.name}'s`} medicines are ${listJoin(meds.map(m => m.name))}. Which one was it?`
+            hi
+              ? `मैं "${spoken_name}" को किसी दवा से नहीं मिला पाई। ${caller.isRecipient ? 'आपकी' : `${caller.recipient.name} की`} दवाइयाँ हैं ${listJoinHi(meds.map(m => m.name))}। कौन-सी थी?`
+              : `I couldn't match "${spoken_name}" to a medicine. ${caller.isRecipient ? 'Your' : `${caller.recipient.name}'s`} medicines are ${listJoin(meds.map(m => m.name))}. Which one was it?`
           );
         }
         if (match.kind === 'ambiguous') {
           return ok(
             { ...base, result: 'needs_clarification' as const, options: match.matches.map(m => ({ id: m.id, name: m.name, purpose: m.purpose })) },
-            `Did you mean ${listJoin(match.matches.map(m => `${m.name} for ${m.purpose}`), 'or')}?`
+            hi
+              ? `क्या आपका मतलब ${listJoinHi(match.matches.map(m => m.name), 'या')} से था?`
+              : `Did you mean ${listJoin(match.matches.map(m => `${m.name} for ${m.purpose}`), 'or')}?`
           );
         }
         targets = match.matches;
@@ -361,9 +244,13 @@ export function registerTools(server: McpServer, deps: Deps): void {
           const next = states.find(s => s.status === 'upcoming') ?? null;
           return ok(
             { ...base, result: 'nothing_due' as const, nextDose: next ? doseOut(next) : null },
-            next
-              ? `Nothing is due right now. Next is ${next.name} at ${spokenTime(next.time)}.`
-              : `All of today's doses are already logged.`
+            hi
+              ? next
+                ? `अभी कोई दवा बाकी नहीं है। अगली दवा ${next.name} है, ${timeHi(next.time)}।`
+                : 'आज की सारी खुराक पहले ही दर्ज हैं।'
+              : next
+                ? `Nothing is due right now. Next is ${next.name} at ${spokenTime(next.time)}.`
+                : `All of today's doses are already logged.`
           );
         }
         targets = meds.filter(m => m.schedule.some(s => s.slot === chosenSlot));
@@ -406,7 +293,21 @@ export function registerTools(server: McpServer, deps: Deps): void {
       const after = (await todayContext(deps, caller, day)).states;
       const next = after.find(s => s.status === 'due') ?? after.find(s => s.status === 'upcoming') ?? null;
       const parts: string[] = [];
-      if (logged.length) {
+      if (hi) {
+        if (logged.length) {
+          const slotsLogged = [...new Set(logged.map(l => l.slot))];
+          const when = slotsLogged.length === 1 ? `${SLOT_HI[slotsLogged[0]]} की ` : '';
+          const skipped = status === 'skipped' ? ' छोड़ी गई के रूप में' : '';
+          parts.push(
+            caller.isRecipient
+              ? `ठीक है। मैंने ${when}${listJoinHi(logged.map(medLabel))}${skipped} दर्ज कर ली है।`
+              : `ठीक है। ${caller.recipient.name} के लिए ${when}${listJoinHi(logged.map(medLabel))}${skipped} दर्ज कर ली है।`
+          );
+        }
+        if (alreadyLogged.length) parts.push(`${listJoinHi(alreadyLogged.map(medLabel))} पहले से दर्ज है।`);
+        if (next) parts.push(`अगली दवा ${next.name} है, ${timeHi(next.time)}।`);
+        else if (logged.length) parts.push(`आज की सारी दवाइयाँ हो गईं${caller.isRecipient ? ', शाबाश' : ''}।`);
+      } else if (logged.length) {
         const slotsLogged = [...new Set(logged.map(l => l.slot))];
         const when = slotsLogged.length === 1 ? ` for ${SLOT_PHRASE[slotsLogged[0]].replace('this ', 'the ').replace('tonight', 'tonight').replace('at lunchtime', 'lunchtime')}` : '';
         parts.push(
@@ -415,9 +316,11 @@ export function registerTools(server: McpServer, deps: Deps): void {
             : `Got it. Logged ${listJoin(logged.map(medLabel))}${when} for ${caller.recipient.name}${status === 'skipped' ? ' as skipped' : ''}.`
         );
       }
-      if (alreadyLogged.length) parts.push(`${listJoin(alreadyLogged.map(medLabel))} ${alreadyLogged.length === 1 ? 'was' : 'were'} already logged.`);
-      if (next) parts.push(`Next is ${next.name} at ${spokenTime(next.time)}.`);
-      else if (logged.length) parts.push(`That's everything for today${caller.isRecipient ? ', well done' : ''}.`);
+      if (!hi) {
+        if (alreadyLogged.length) parts.push(`${listJoin(alreadyLogged.map(medLabel))} ${alreadyLogged.length === 1 ? 'was' : 'were'} already logged.`);
+        if (next) parts.push(`Next is ${next.name} at ${spokenTime(next.time)}.`);
+        else if (logged.length) parts.push(`That's everything for today${caller.isRecipient ? ', well done' : ''}.`);
+      }
 
       return ok(
         {
@@ -428,7 +331,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
           options: [],
           nextDose: next ? doseOut(next) : null
         },
-        sentences(...parts) || `${who.has} nothing to log right now.`
+        sentences(...parts) || (hi ? 'अभी दर्ज करने को कुछ नहीं है।' : `${who.has} nothing to log right now.`)
       );
     })
   );
@@ -447,7 +350,8 @@ export function registerTools(server: McpServer, deps: Deps): void {
         withinDays: z.number(),
         alerts: z.array(SupplyOut.extend({ pharmacy: z.object({ id: z.string(), name: z.string() }) }))
       }),
-      annotations: { title: 'Check medicine supply', readOnlyHint: true, openWorldHint: false }
+      annotations: { title: 'Check medicine supply', readOnlyHint: true, openWorldHint: false },
+      _meta: uiMeta(['model'])
     },
     guarded(async ({ within_days }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
@@ -466,7 +370,22 @@ export function registerTools(server: McpServer, deps: Deps): void {
       );
       const unordered = alerts.filter(a => !a.order);
       const whose = caller.isRecipient ? 'your' : `${caller.recipient.name}'s`;
-      const speech = alerts.length
+      const speech = caller.lang === 'hi'
+        ? alerts.length
+          ? sentences(
+              ...alerts.flatMap(a => {
+                const order = orders.get(a.medicationId);
+                const line =
+                  a.daysLeft === 0
+                    ? `${a.name} ${a.strength} खत्म हो गई है या एक दिन से कम की बची है।`
+                    : `${a.name} ${a.strength} लगभग ${a.daysLeft} दिन की बची है, ${dateHi(a.runsOutOn, caller.local.date)} तक चलेगी।`;
+                return order ? [line, orderSentence(order, caller.now, caller.local.date, 'hi')] : [line];
+              }),
+              unordered.length > 0 &&
+                `यह ${unordered[0].pharmacy.name} से आती है।${caller.member.role === 'helper' ? '' : ' क्या मैं इसे दोबारा मंगा दूँ?'}`
+            )
+          : `${caller.isRecipient ? 'आपकी' : `${caller.recipient.name} की`} सभी दवाइयाँ ${within_days} दिन से ज़्यादा चलेंगी।`
+        : alerts.length
         ? sentences(
             ...alerts.map(
               a =>
@@ -493,7 +412,11 @@ export function registerTools(server: McpServer, deps: Deps): void {
       description:
         "Record a note about how the care recipient is feeling, sleeping or managing, e.g. 'I slept badly', 'Mom says her knee hurts', 'I feel dizzy'. Notes show up in the family's status and digest. CareCircle does not diagnose or give medical advice; urgent symptoms get safety guidance.",
       inputSchema: z.object({
-        note: z.string().min(1).max(500).describe("What was said, in plain words, e.g. 'feeling dizzy since lunch'"),
+        note: z
+          .string()
+          .min(1)
+          .max(500)
+          .describe("What was said, in plain English words (translate if the person spoke another language), e.g. 'feeling dizzy since lunch'"),
         severity: z.enum(['low', 'medium', 'high']).optional().describe('How worrying it sounds, if clear')
       }),
       outputSchema: z.object({
@@ -505,14 +428,16 @@ export function registerTools(server: McpServer, deps: Deps): void {
         reasons: z.array(z.string()),
         familyCanSee: z.boolean()
       }),
-      annotations: { title: 'Log how they feel', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+      annotations: { title: 'Log how they feel', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      _meta: uiMeta(['model'])
     },
     guarded(async ({ note, severity }, ctx) => {
       const caller = await resolveCaller(ctx, deps);
       const check = safetyCheck(note);
       const level = check.redFlag ? 'high' : (severity ?? 'low');
       const local = localParts(caller.now, caller.family.timezone);
-      const id = `well-${caller.now.getTime()}`;
+      // Unique even with a frozen demo clock: screens announce each alert once, by id.
+      const id = `well-${caller.now.getTime()}-${randomUUID().slice(0, 8)}`;
       await deps.store.addWellbeing({
         id,
         familyId: caller.family.id,
@@ -527,7 +452,20 @@ export function registerTools(server: McpServer, deps: Deps): void {
       const others = (await deps.store.listMembers(caller.family.id)).filter(m => m.id !== caller.member.id && m.id !== caller.recipient.id);
       const family = listJoin(others.map(m => m.name)) || 'the family';
       let speech: string;
-      if (check.redFlag) {
+      if (caller.lang === 'hi') {
+        const familyHi = listJoinHi(others.map(m => m.name)) || 'परिवार';
+        const reason = check.reasons[0];
+        speech = check.redFlag
+          ? sentences(
+              caller.isRecipient ? 'मैंने यह दर्ज कर लिया है।' : `मैंने ${caller.recipient.name} के लिए यह दर्ज कर लिया है।`,
+              `${REASON_HI[reason] ?? reason} गंभीर हो सकता है।`,
+              'अगर तकलीफ़ ज़्यादा है या अचानक हुई है, तो अभी इमरजेंसी सेवा को फ़ोन करें।',
+              `${familyHi} को यह नोट तुरंत दिखेगा।`
+            )
+          : level === 'medium'
+            ? sentences('बताने के लिए धन्यवाद, मैंने नोट कर लिया है।', 'अगर तकलीफ़ बढ़े या ठीक न हो, तो डॉक्टर को फ़ोन करें।', `${familyHi} इसे आज के अपडेट में देख सकते हैं।`)
+            : sentences('धन्यवाद, मैंने इसे आज के नोट्स में जोड़ दिया है।', `${familyHi} इसे आज के अपडेट में देख सकते हैं।`);
+      } else if (check.redFlag) {
         speech = sentences(
           caller.isRecipient ? "I've noted that." : `I've noted that for ${caller.recipient.name}.`,
           `${check.reasons[0][0].toUpperCase()}${check.reasons[0].slice(1)} can be serious.`,
@@ -547,6 +485,62 @@ export function registerTools(server: McpServer, deps: Deps): void {
         );
       }
       return ok({ id, date: local.date, time: local.time, severity: level, redFlag: check.redFlag, reasons: check.reasons, familyCanSee: true }, speech);
+    })
+  );
+
+  /* set_language */
+  server.registerTool(
+    'set_language',
+    {
+      title: 'Change the spoken language',
+      description:
+        "Change the language CareCircle uses when speaking to this person: 'en' for English, 'hi' for Hindi. Use for 'Talk to me in Hindi', 'हिंदी में बात करो' or 'Speak English'. Only changes the caller's own preference; the rest of the family keeps theirs.",
+      inputSchema: z.object({ language: z.enum(LANGUAGES).describe('en = English, hi = Hindi') }),
+      outputSchema: z.object({ language: z.enum(LANGUAGES), member: z.object({ id: z.string(), name: z.string() }) }),
+      annotations: { title: 'Change the spoken language', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      _meta: uiMeta(['model'])
+    },
+    guarded(async ({ language }, ctx) => {
+      const caller = await resolveCaller(ctx, deps);
+      await deps.store.setMemberLanguage(caller.member.id, language);
+      return ok(
+        { language, member: { id: caller.member.id, name: caller.member.name } },
+        language === 'hi' ? `ठीक है ${caller.member.name} जी, अब मैं आपसे हिंदी में बात करूँगी।` : `Okay ${caller.member.name}, I'll speak English from now on.`
+      );
+    })
+  );
+
+  /* send_daily_summary */
+  server.registerTool(
+    'send_daily_summary',
+    {
+      title: "Send today's summary to the family",
+      description:
+        "Send the family a short written summary of the care recipient's day: doses taken and missed, alerts, notes, supplies and visits. It goes to everyone except the care recipient, in the CareCircle app and by email or text when set up. It is also sent automatically every evening. Use for 'Send everyone today's summary'.",
+      inputSchema: z.object({}),
+      outputSchema: z.object({
+        id: z.string(),
+        title: z.string(),
+        text: z.string(),
+        to: z.array(z.object({ id: z.string(), name: z.string() })),
+        delivery: z.object({ inbox: z.boolean(), sns: z.enum(['sent', 'failed', 'off']) })
+      }),
+      annotations: { title: "Send today's summary", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      _meta: uiMeta(['model'])
+    },
+    guarded(async (_args, ctx) => {
+      const caller = await resolveCaller(ctx, deps);
+      const message = await sendDailySummary(deps, caller.family.id, caller.member.id);
+      const members = await deps.store.listMembers(caller.family.id);
+      const to = message.to.map(id => ({ id, name: members.find(m => m.id === id)?.name ?? id }));
+      const names = to.map(t => t.name);
+      const where =
+        message.delivery.sns === 'sent' ? ' by email and in the CareCircle app' : message.delivery.sns === 'failed' ? ' in the CareCircle app; the email could not be sent' : ' in the CareCircle app';
+      const speech =
+        caller.lang === 'hi'
+          ? `हो गया। मैंने आज का सारांश ${listJoinHi(names)} को भेज दिया है।`
+          : `Done. I've sent today's summary to ${listJoin(names)}${where}.`;
+      return ok({ id: message.id, title: message.title, text: message.text, to, delivery: { inbox: true, sns: message.delivery.sns } }, speech);
     })
   );
 }

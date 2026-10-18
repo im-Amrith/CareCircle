@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CareCircle: today</title>
+<!--
+  MCP App view for get_care_status (io.modelcontextprotocol/ui, 2026-01-26).
+  Self-contained: no network access, no external scripts, styles or fonts.
+  Talks to its host only through JSON-RPC over postMessage:
+    ui/initialize, ui/notifications/initialized, ui/notifications/size-changed  (view -> host)
+    tools/call log_medication and get_care_status, ui/message                   (view -> host)
+    ui/notifications/tool-input, tool-result, tool-cancelled, host-context-changed,
+    ui/resource-teardown                                                        (host -> view)
+  Follows the host's locale (English or Hindi) and its --font-text-md-size style variable,
+  and re-renders whenever the host sends a newer tool-result (live family updates).
+-->
+<style>
+  :root {
+    --bg: #ffffff; --ink: #0f172a; --ink-2: #334155; --muted: #64748b; --line: #e2e8f0; --tile: #f8fafc;
+    --accent: #0e7490; --accent-ink: #ffffff;
+    --taken: #047857; --taken-bg: #ecfdf5; --due: #92400e; --due-bg: #fffbeb;
+    --missed: #b91c1c; --missed-bg: #fef2f2; --upcoming: #475569; --upcoming-bg: #f1f5f9;
+    --ring-track: #e2e8f0;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #18264a; --ink: #e8eef8; --ink-2: #c5d0e2; --muted: #93a3bd; --line: #2b3d68; --tile: #1d2d55;
+    --accent: #22d3ee; --accent-ink: #04212a;
+    --taken: #6ee7b7; --taken-bg: rgba(52, 211, 153, 0.12); --due: #fcd34d; --due-bg: rgba(251, 191, 36, 0.12);
+    --missed: #fca5a5; --missed-bg: rgba(248, 113, 113, 0.14); --upcoming: #b4c0d4; --upcoming-bg: rgba(148, 163, 184, 0.1);
+    --ring-track: #2b3d68;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  /* Everything is in rem, so the host's text size variable scales the whole view. */
+  html { font-size: var(--font-text-md-size, 16px); }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body { font: 1rem/1.4 "Segoe UI", "Nirmala UI", "Noto Sans Devanagari", system-ui, -apple-system, sans-serif; padding: 1rem; }
+  button { font: inherit; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+  .ring { position: relative; width: 4.75rem; height: 4.75rem; flex: none; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring-num { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; font-size: 1.15rem; }
+  h1 { font-size: 1.35rem; margin: 0; }
+  .sub { margin: 2px 0 0; color: var(--muted); }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  section { background: var(--tile); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 8px; }
+  .side { display: flex; flex-direction: column; gap: 14px; }
+
+  .slot + .slot { margin-top: 10px; }
+  .slot-head { font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  .dose { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); min-height: 3.25rem; }
+  .slot ul li:first-child { border-top: 0; }
+  .dose-main { flex: 1; min-width: 0; }
+  .dose-name { font-weight: 600; font-size: 1.05rem; }
+  .dose-meta { color: var(--muted); font-size: 0.9rem; }
+  .pill { border-radius: 999px; padding: 3px 10px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
+  .s-taken { color: var(--taken); background: var(--taken-bg); }
+  .s-skipped, .s-upcoming { color: var(--upcoming); background: var(--upcoming-bg); }
+  .s-due { color: var(--due); background: var(--due-bg); }
+  .s-missed { color: var(--missed); background: var(--missed-bg); }
+  .btn { min-height: 2.75rem; min-width: 2.75rem; padding: 8px 16px; border-radius: 10px; border: 2px solid var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 700; cursor: pointer; }
+  .btn-quiet { background: transparent; color: var(--accent); }
+  .btn:disabled { opacity: 0.55; cursor: default; }
+
+  .fact { padding: 6px 0; border-top: 1px solid var(--line); }
+  .fact:first-of-type { border-top: 0; }
+  .alert { color: var(--missed); background: var(--missed-bg); border-radius: 8px; padding: 8px 10px; font-weight: 600; }
+  .refill { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .empty { color: var(--muted); }
+  .toast { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--taken-bg); color: var(--taken); font-weight: 600; }
+  .toast.bad { background: var(--missed-bg); color: var(--missed); }
+  .loading { color: var(--muted); padding: 24px 0; text-align: center; }
+  footer { margin-top: 12px; color: var(--muted); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+<main id="app"><p class="loading">Loading today's care…</p></main>
+<div id="live" class="sr-only" aria-live="polite"></div>
+
+<script>
+(() => {
+  'use strict';
+  const PROTOCOL_VERSION = '2026-01-26';
+  // Labels in the host's language (hostContext.locale). Medicine names stay as on the box.
+  const TEXT = {
+    en: {
+      slots: { morning: 'Morning', noon: 'Lunchtime', evening: 'Evening', night: 'Night' },
+      status: { taken: 'Taken', skipped: 'Skipped', due: 'Due now', upcoming: 'Later', missed: 'Not logged' },
+      doses: 'Doses', supply: 'Supply', notes: 'Visits and notes', markTaken: 'Mark taken', saving: 'Saving…', reorder: 'Reorder',
+      noDoses: 'No doses scheduled.', stocked: 'All medicines well stocked.', nothingNew: 'Nothing new today.',
+      allDone: 'All doses done for today.', next: (name, at) => 'Next: ' + name + ' at ' + at,
+      daysLeft: n => n + (n === 1 ? ' day' : ' days') + ' left', pills: n => n + (n === 1 ? ' pill' : ' pills'),
+      visits: (who, at, why) => [who, ' visits at ' + at + (why ? ' · ' + why : '')], note: 'Note: ', alert: 'Alert: ',
+      taken: (t, n) => t + ' of ' + n + ' doses taken', markLabel: name => 'Mark ' + name + ' taken',
+      placed: (pickup, on) => 'Order placed, ' + (pickup ? 'ready ' : 'arrives ') + on, ordered: 'Order placed', checkout: 'Waiting for checkout',
+      cancelled: 'The request was cancelled.', failed: "Couldn't load today's care.", logged: name => name + ' logged.',
+      couldNotLog: msg => "Couldn't log that: " + msg, couldNotAsk: msg => "Couldn't ask for that: " + msg,
+      footer: 'CareCircle coordinates care. It does not give medical advice.', loading: "Loading today's care…"
+    },
+    hi: {
+      slots: { morning: 'सुबह', noon: 'दोपहर', evening: 'शाम', night: 'रात' },
+      status: { taken: 'ले ली', skipped: 'छोड़ी', due: 'अभी लेनी है', upcoming: 'बाद में', missed: 'दर्ज नहीं' },
+      doses: 'खुराक', supply: 'दवा का स्टॉक', notes: 'मुलाक़ातें और नोट्स', markTaken: 'ले ली', saving: 'दर्ज हो रही है…', reorder: 'दोबारा मंगाएँ',
+      noDoses: 'आज कोई खुराक नहीं है।', stocked: 'सभी दवाइयाँ पर्याप्त हैं।', nothingNew: 'आज कुछ नया नहीं।',
+      allDone: 'आज की सारी खुराक हो गईं।', next: (name, at) => 'अगली: ' + name + ', ' + at,
+      daysLeft: n => n + ' दिन की बची', pills: n => n + ' गोली',
+      visits: (who, at, why) => [who, ' · ' + at + (why ? ' · ' + why : '')], note: 'नोट: ', alert: 'अलर्ट: ',
+      taken: (t, n) => n + ' में से ' + t + ' खुराक ली गईं', markLabel: name => name + ' ले ली, दर्ज करें',
+      placed: (pickup, on) => 'ऑर्डर हो गया, ' + on + (pickup ? ' को तैयार' : ' को पहुँचेगा'), ordered: 'ऑर्डर हो गया', checkout: 'चेकआउट बाकी है',
+      cancelled: 'अनुरोध रद्द हो गया।', failed: 'आज की जानकारी नहीं मिल पाई।', logged: name => name + ' दर्ज हो गई।',
+      couldNotLog: msg => 'दर्ज नहीं हो पाया: ' + msg, couldNotAsk: msg => 'पूछ नहीं पाई: ' + msg,
+      footer: 'CareCircle देखभाल में मदद करता है। यह डॉक्टरी सलाह नहीं देता।', loading: 'आज की जानकारी आ रही है…'
+    }
+  };
+  let lang = 'en';
+  let locale = 'en-GB';
+  const T = () => TEXT[lang];
+
+  const app = document.getElementById('app');
+  const live = document.getElementById('live');
+  const state = { status: null, readOnly: false, busy: new Set(), toast: null };
+
+  /* ---------- JSON-RPC over postMessage ---------- */
+  let nextId = 1;
+  const pending = new Map();
+  const send = msg => window.parent.postMessage(msg, '*');
+  const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
+  const request = (method, params) =>
+    new Promise((resolve, reject) => {
+      const id = nextId++;
+      pending.set(id, { resolve, reject });
+      send({ jsonrpc: '2.0', id, method, params });
+    });
+
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent) return;
+    const msg = event.data;
+    if (!msg || msg.jsonrpc !== '2.0') return;
+    if (msg.method === undefined && msg.id !== undefined) {
+      const p = pending.get(msg.id);
+      if (!p) return;
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error.message || 'Request failed'));
+      else p.resolve(msg.result);
+      return;
+    }
+    switch (msg.method) {
+      case 'ui/notifications/tool-input':
+        break;
+      case 'ui/notifications/tool-result':
+        acceptResult(msg.params);
+        break;
+      case 'ui/notifications/tool-cancelled':
+        app.replaceChildren(el('p', { class: 'empty' }, T().cancelled));
+        break;
+      case 'ui/notifications/host-context-changed':
+        applyContext(msg.params || {});
+        break;
+      case 'ui/resource-teardown':
+      case 'ping':
+        send({ jsonrpc: '2.0', id: msg.id, result: {} });
+        break;
+      default:
+        if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } });
+    }
+  });
+
+  function applyContext(ctx) {
+    const root = document.documentElement;
+    if (ctx.theme === 'dark' || ctx.theme === 'light') root.dataset.theme = ctx.theme;
+    if (typeof ctx.locale === 'string') {
+      lang = /^hi\b/i.test(ctx.locale) ? 'hi' : 'en';
+      locale = lang === 'hi' ? 'hi-IN' : 'en-GB';
+      root.lang = lang;
+    }
+    // Host style variables, e.g. a larger --font-text-md-size for older readers.
+    const vars = (ctx.styles && ctx.styles.variables) || {};
+    for (const [name, value] of Object.entries(vars)) if (/^--[\w-]+$/.test(name) && typeof value === 'string') root.style.setProperty(name, value);
+    render();
+  }
+
+  function acceptResult(result) {
+    if (!result || result.isError || !result.structuredContent) {
+      const text = result && result.content && result.content.find(c => c.type === 'text');
+      app.replaceChildren(el('p', { class: 'empty' }, text ? text.text : T().failed));
+      return;
+    }
+    state.status = result.structuredContent;
+    // A past day is a read-only look back; only today can be logged.
+    state.readOnly = state.status.isToday === false;
+    render();
+  }
+
+  /* ---------- actions ---------- */
+  async function markTaken(dose) {
+    const key = dose.medicationId + '|' + dose.slot;
+    state.busy.add(key);
+    render();
+    try {
+      const result = await request('tools/call', {
+        name: 'log_medication',
+        arguments: { medication_ids: [dose.medicationId], slot: dose.slot, status: 'taken' }
+      });
+      const said = textOf(result);
+      state.toast = { text: said || T().logged(dose.name), bad: Boolean(result && result.isError) };
+      const fresh = await request('tools/call', { name: 'get_care_status', arguments: {} });
+      if (fresh && !fresh.isError && fresh.structuredContent) state.status = fresh.structuredContent;
+    } catch (err) {
+      state.toast = { text: T().couldNotLog(err.message), bad: true };
+    } finally {
+      state.busy.delete(key);
+      render();
+      live.textContent = state.toast ? state.toast.text : '';
+    }
+  }
+
+  async function askToReorder(alert) {
+    // Purchases stay in the conversation, with its spoken confirmation; the view can't order directly.
+    try {
+      await request('ui/message', { role: 'user', content: [{ type: 'text', text: 'Reorder ' + alert.name }] });
+    } catch (err) {
+      state.toast = { text: T().couldNotAsk(err.message), bad: true };
+      render();
+    }
+  }
+
+  const textOf = r => ((r && r.content) || []).filter(c => c.type === 'text').map(c => c.text).join(' ').trim();
+
+  /* ---------- rendering ---------- */
+  function el(tag, attrs, ...children) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === false || v == null) continue;
+      if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v === true ? '' : v);
+    }
+    for (const c of children.flat()) if (c != null && c !== false) node.append(c);
+    return node;
+  }
+
+  function clock(hhmm) {
+    const [h, m] = hhmm.split(':').map(Number);
+    const h12 = h % 12 || 12;
+    if (lang === 'hi') {
+      const part = h < 4 ? 'रात' : h < 12 ? 'सुबह' : h < 16 ? 'दोपहर' : h < 19 ? 'शाम' : 'रात';
+      return part + ' ' + (m ? h12 + ':' + String(m).padStart(2, '0') : h12 + ' बजे');
+    }
+    const ampm = h < 12 ? 'am' : 'pm';
+    return m ? h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm : h12 + ' ' + ampm;
+  }
+
+  function dayLabel(iso) {
+    const d = new Date(iso + 'T12:00:00Z');
+    return d.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  }
+
+  function ring(taken, total) {
+    const r = 32, c = 2 * Math.PI * r, frac = total ? taken / total : 0;
+    const svg = '<svg viewBox="0 0 76 76" aria-hidden="true">' +
+      '<circle cx="38" cy="38" r="' + r + '" fill="none" stroke="var(--ring-track)" stroke-width="8"/>' +
+      '<circle cx="38" cy="38" r="' + r + '" fill="none" stroke="var(--taken)" stroke-width="8" stroke-linecap="round"' +
+      ' stroke-dasharray="' + (c * frac).toFixed(1) + ' ' + c.toFixed(1) + '"/></svg>';
+    const box = el('div', { class: 'ring', role: 'img', 'aria-label': T().taken(taken, total) });
+    box.innerHTML = svg;
+    box.append(el('span', { class: 'ring-num', 'aria-hidden': 'true' }, taken + '/' + total));
+    return box;
+  }
+
+  function doseRow(d) {
+    const key = d.medicationId + '|' + d.slot;
+    const canLog = !state.readOnly && (d.status === 'due' || d.status === 'missed');
+    const busy = state.busy.has(key);
+    return el('li', { class: 'dose' },
+      el('div', { class: 'dose-main' },
+        el('div', { class: 'dose-name' }, d.name + ' ', el('span', { class: 'dose-meta' }, d.strength)),
+        el('div', { class: 'dose-meta' }, clock(d.time) + ' · ' + T().pills(d.pills))),
+      canLog
+        ? el('button', { class: 'btn', disabled: busy, 'aria-label': T().markLabel(d.name), onclick: () => markTaken(d) }, busy ? T().saving : T().markTaken)
+        : el('span', { class: 'pill s-' + d.status }, T().status[d.status] || d.status));
+  }
+
+  function orderLine(o) {
+    if (o.status === 'placed') return o.readyOn ? T().placed(o.fulfilment === 'pickup', dayLabel(o.readyOn)) : T().ordered;
+    if (o.status === 'awaiting_checkout') return T().checkout;
+    return '';
+  }
+
+  function render() {
+    const s = state.status;
+    if (!s) return;
+    const t = T();
+    const doses = s.doses || [];
+    const slots = [...new Set(doses.map(d => d.slot))];
+
+    const doseSection = el('section', { 'aria-labelledby': 'h-doses' },
+      el('h2', { id: 'h-doses' }, t.doses),
+      doses.length
+        ? slots.map(slot => el('div', { class: 'slot' },
+            el('div', { class: 'slot-head' }, t.slots[slot] || slot),
+            el('ul', {}, doses.filter(d => d.slot === slot).map(doseRow))))
+        : el('p', { class: 'empty' }, t.noDoses));
+
+    const refills = s.refillAlerts || [];
+    const supply = el('section', { 'aria-labelledby': 'h-supply' },
+      el('h2', { id: 'h-supply' }, t.supply),
+      refills.length
+        ? refills.map(a => el('div', { class: 'fact refill' },
+            el('div', {}, el('strong', {}, a.name), ' · ' + t.daysLeft(a.daysLeft),
+              a.order && orderLine(a.order) ? el('div', { class: 'dose-meta' }, orderLine(a.order)) : null),
+            !a.order && !state.readOnly
+              ? el('button', { class: 'btn btn-quiet', onclick: () => askToReorder(a) }, t.reorder)
+              : null))
+        : el('p', { class: 'empty' }, t.stocked));
+
+    const w = s.latestWellbeing;
+    const notes = el('section', { 'aria-labelledby': 'h-notes' },
+      el('h2', { id: 'h-notes' }, t.notes),
+      (s.visits || []).map(v => {
+        const [who, rest] = t.visits(v.who, clock(v.time), v.purpose);
+        return el('div', { class: 'fact' }, el('strong', {}, who), rest);
+      }),
+      w ? el('div', { class: 'fact' + (w.redFlag ? ' alert' : '') }, (w.redFlag ? t.alert : t.note) + w.note, el('div', { class: 'dose-meta' }, clock(w.time))) : null,
+      !(s.visits || []).length && !w ? el('p', { class: 'empty' }, t.nothingNew) : null);
+
+    const next = s.nextDose;
+    const counts = s.counts || { taken: 0, total: 0 };
+    // replaceChildren would print a null as the text "null", so leave the toast out when there is none.
+    app.replaceChildren(...[
+      el('header', {},
+        ring(counts.taken, counts.total),
+        el('div', {},
+          el('h1', {}, s.recipient.name + ' · ' + dayLabel(s.date)),
+          el('p', { class: 'sub' }, next ? t.next(next.name, clock(next.time)) : counts.taken === counts.total ? t.allDone : ''))),
+      el('div', { class: 'grid' }, doseSection, el('div', { class: 'side' }, supply, notes)),
+      state.toast && el('div', { class: 'toast' + (state.toast.bad ? ' bad' : ''), role: 'status' }, state.toast.text),
+      el('footer', {}, t.footer)
+    ].filter(Boolean));
+  }
+
+  /* ---------- size reporting ---------- */
+  // Measure the body, not the document: the document is never shorter than the frame, so it could only grow.
+  let lastHeight = 0;
+  new ResizeObserver(() => {
+    const box = document.body.getBoundingClientRect();
+    const height = Math.ceil(box.height);
+    if (height === lastHeight) return;
+    lastHeight = height;
+    notify('ui/notifications/size-changed', { width: Math.ceil(box.width), height });
+  }).observe(document.body);
+
+  /* ---------- handshake ---------- */
+  request('ui/initialize', {
+    protocolVersion: PROTOCOL_VERSION,
+    appInfo: { name: 'carecircle-care-dashboard', version: '0.1.0' },
+    appCapabilities: {}
+  })
+    .then(res => {
+      applyContext((res && res.hostContext) || {});
+      notify('ui/notifications/initialized', {});
+      render();
+    })
+    .catch(err => {
+      app.innerHTML = '';
+      app.append(el('p', { class: 'empty' }, "Couldn't connect to the host: " + err.message));
+    });
+})();
+</script>
+</body>
+</html>

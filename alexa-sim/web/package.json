@@ -1,0 +1,26 @@
+{
+  "name": "carecircle-sim-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CareCircle simulator web app: device frames, cards, elicitation and a live MCP protocol panel",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "preview": "vite preview --host 127.0.0.1 --port 5173"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

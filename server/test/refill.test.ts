@@ -238,6 +238,25 @@ describe('MCP elicitation: form for "Reorder?", URL mode for checkout', () => {
 
   const caps = { elicitation: { form: {}, url: {} } };
 
+  it('asks with a form even when the model already sent confirm=true', async () => {
+    let asked = 0;
+    const sam = await connect(
+      srv.url,
+      'sam',
+      c =>
+        c.setRequestHandler('elicitation/create', async () => {
+          asked++;
+          return { action: 'decline' as const };
+        }),
+      caps
+    );
+    const r = await call(sam, 'request_refill', { confirm: true });
+    expect(asked).toBe(1);
+    expect(r.structuredContent?.result).toBe('declined');
+    expect(srv.store.orders).toHaveLength(0);
+    await sam.close();
+  });
+
   it('a declined form orders nothing', async () => {
     const rose = await connect(
       srv.url,

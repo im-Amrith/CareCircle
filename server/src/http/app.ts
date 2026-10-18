@@ -9,6 +9,9 @@ import { createCareCircleServer, SERVER_NAME, SERVER_VERSION } from '../mcp/serv
 import { devAuth, userOf } from './auth.js';
 import { MemoryEventStore } from './event-store.js';
 import { checkoutRouter } from './checkout.js';
+import { ChangeHub, watchStore } from '../store/changes.js';
+import { createNotifier, snsPublisher } from '../notify/notifier.js';
+import { runDigestSchedule } from '../notify/digest.js';
 
 interface Session {
   transport: NodeStreamableHTTPServerTransport;
@@ -29,8 +32,14 @@ function rpcError(res: Response, status: number, code: number, message: string) 
  * the transport rejects unsupported MCP-Protocol-Version headers with 400.
  */
 export function createHttpApp(config: Config, baseDeps: Deps) {
+  // Every write is announced on the hub, so each family member's session can push updates.
+  const changes = baseDeps.changes ?? new ChangeHub();
+  const store = watchStore(baseDeps.store, changes);
   const deps: Deps = {
     ...baseDeps,
+    store,
+    changes,
+    notifier: baseDeps.notifier ?? createNotifier(store, config.snsTopicArn ? snsPublisher(config.snsTopicArn, config.awsRegion) : undefined),
     publicUrl: baseDeps.publicUrl ?? config.publicUrl,
     checkoutWatchers: baseDeps.checkoutWatchers ?? new Map()
   };
@@ -42,7 +51,14 @@ export function createHttpApp(config: Config, baseDeps: Deps) {
   const sessions = new Map<string, Session>();
 
   app.get('/healthz', (_req, res) => {
-    res.json({ ok: true, name: SERVER_NAME, version: SERVER_VERSION, protocol: LATEST_PROTOCOL_VERSION, sessions: sessions.size });
+    res.json({
+      ok: true,
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+      protocol: LATEST_PROTOCOL_VERSION,
+      sessions: sessions.size,
+      eveningSummary: { at: config.digestTime ?? 'off', sns: Boolean(config.snsTopicArn) }
+    });
   });
 
   // Refill checkout pages. Not behind dev auth: the one-time link is the credential.
@@ -129,11 +145,20 @@ export function createHttpApp(config: Config, baseDeps: Deps) {
   }, 60_000);
   sweep.unref();
 
+  // The evening summary: checked every minute, sent once per family per day at its digest time.
+  const digest = config.digestTime
+    ? setInterval(() => {
+        runDigestSchedule(deps, config.digestTime).catch(err => console.error('[carecircle] evening summary failed', err));
+      }, 60_000)
+    : undefined;
+  digest?.unref();
+
   async function close() {
     clearInterval(sweep);
+    if (digest) clearInterval(digest);
     await Promise.all([...sessions.values()].map(s => s.transport.close().catch(() => undefined)));
     sessions.clear();
   }
 
-  return { app, sessions, close };
+  return { app, sessions, close, deps };
 }

@@ -16,7 +16,16 @@ describe('MCP surface', () => {
     expect(c.getServerVersion()?.name).toBe('carecircle-mcp');
     expect(c.getInstructions()).toContain('never gives medical advice');
     const { tools } = await c.listTools();
-    expect(tools.map(t => t.name).sort()).toEqual(['check_refills', 'get_care_status', 'list_medications', 'log_medication', 'log_wellbeing', 'request_refill']);
+    expect(tools.map(t => t.name).sort()).toEqual([
+      'check_refills',
+      'get_care_status',
+      'list_medications',
+      'log_medication',
+      'log_wellbeing',
+      'request_refill',
+      'send_daily_summary',
+      'set_language'
+    ]);
     for (const t of tools) {
       expect(t.description?.length).toBeGreaterThan(40);
       expect(t.outputSchema).toBeDefined();
@@ -47,11 +56,18 @@ describe('MCP surface', () => {
   it('exposes the care plan and daily log resources, scoped to the family', async () => {
     const c = await connect(srv.url, 'maya');
     const { resources } = await c.listResources();
-    expect(resources.map(r => r.uri)).toEqual(['carecircle://family/fam-rose/care-plan']);
+    expect(resources.map(r => r.uri).sort()).toEqual([
+      'carecircle://family/fam-rose/care-plan',
+      'carecircle://family/fam-rose/inbox',
+      'carecircle://family/fam-rose/today',
+      'ui://carecircle/care-dashboard'
+    ]);
     const { resourceTemplates } = await c.listResourceTemplates();
     expect(resourceTemplates.map(t => t.uriTemplate).sort()).toEqual([
       'carecircle://family/{familyId}/care-plan',
-      'carecircle://family/{familyId}/log/{date}'
+      'carecircle://family/{familyId}/inbox',
+      'carecircle://family/{familyId}/log/{date}',
+      'carecircle://family/{familyId}/today'
     ]);
     const plan = await c.readResource({ uri: 'carecircle://family/fam-rose/care-plan' });
     expect((plan.contents[0] as { text: string }).text).toContain('Amlodipine 5 mg');
@@ -159,5 +175,18 @@ describe('demo journeys at 9 am', () => {
     expect(r.isError).toBe(true);
     expect(said(r)).toContain("couldn't find your CareCircle account");
     await stranger.close();
+  });
+});
+
+describe('spoken notes', () => {
+  it('keeps "I" capitalised when quoting a first-person note', async () => {
+    const own = await startServer();
+    const rose = await connect(own.url, 'rose');
+    await call(rose, 'log_wellbeing', { note: 'I had a fall in the kitchen' });
+    const sam = await connect(own.url, 'sam');
+    expect(said(await call(sam, 'get_care_status'))).toContain('She mentioned: I had a fall in the kitchen.');
+    await rose.close();
+    await sam.close();
+    await own.stop();
   });
 });

@@ -1,0 +1,16 @@
+{
+  "name": "carecircle",
+  "private": true,
+  "description": "CareCircle: family care coordination for Alexa+ (MCP server, simulator orchestrator, simulator web app)",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "sim": "node scripts/sim.mjs",
+    "sim:demo": "node scripts/sim.mjs --demo",
+    "sim:mock": "node scripts/sim.mjs --mock --demo",
+    "test": "npm --prefix server test && node scripts/sim.mjs --pytest && npm --prefix alexa-sim/web run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

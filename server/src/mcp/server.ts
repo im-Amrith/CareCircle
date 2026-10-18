@@ -4,12 +4,15 @@ import { registerTools } from './tools.js';
 import { registerRefillTools } from './refills.js';
 import { registerResources } from './resources.js';
 import { registerPrompts } from './prompts.js';
+import { registerApps } from './apps.js';
+import { registerLiveResources } from './live.js';
 
 export const SERVER_NAME = 'carecircle-mcp';
 export const SERVER_VERSION = '0.1.0';
 
 const INSTRUCTIONS = `CareCircle helps a family coordinate an older person's daily care: medication doses, refills, visits and how they are feeling.
-- Use get_care_status for "How is Mom today?" or a greeting; list_medications for schedules; log_medication when someone says they took (or skipped) medicine; check_refills for supplies; request_refill to reorder; log_wellbeing for how they feel.
+- Use get_care_status for "How is Mom today?" or a greeting; list_medications for schedules; log_medication when someone says they took (or skipped) medicine; check_refills for supplies; request_refill to reorder; log_wellbeing for how they feel; set_language when someone asks you to speak Hindi or English; send_daily_summary to send the family today's written summary.
+- Replies come in the caller's chosen language (English or Hindi). Keep that language when you speak; medicine names stay as they are.
 - Every tool returns a short sentence meant to be spoken aloud. Prefer reading it as is; keep replies brief.
 - If log_medication returns needs_clarification, ask the user which option they meant, then call it again with medication_ids.
 - request_refill never orders without a yes: if it returns needs_confirmation, ask its question and call again with confirm true only after a clear yes. The order is placed on the checkout page it links to. Show the checkout link on screen; never read a URL aloud.
@@ -29,7 +32,8 @@ export function createCareCircleServer(deps: Deps): McpServer {
       instructions: INSTRUCTIONS,
       capabilities: {
         tools: { listChanged: true },
-        resources: { listChanged: true },
+        // today and inbox support resources/subscribe, so every family screen stays live.
+        resources: { subscribe: true, listChanged: true },
         prompts: { listChanged: true }
       }
     }
@@ -38,5 +42,7 @@ export function createCareCircleServer(deps: Deps): McpServer {
   registerRefillTools(server, deps);
   registerResources(server, deps);
   registerPrompts(server, deps);
+  registerApps(server);
+  registerLiveResources(server, deps);
   return server;
 }

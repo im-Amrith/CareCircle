@@ -2,6 +2,8 @@ import type {
   CareStore,
   DoseLog,
   Family,
+  FamilyMessage,
+  Language,
   Medication,
   Member,
   OrderStatus,
@@ -21,9 +23,21 @@ export class MemoryStore implements CareStore {
   visits: Visit[] = [];
   wellbeing: WellbeingNote[] = [];
   orders: RefillOrder[] = [];
+  messages: FamilyMessage[] = [];
 
   async getMember(userId: string) {
     return this.members.get(userId);
+  }
+
+  async setMemberLanguage(userId: string, language: Language) {
+    const member = this.members.get(userId);
+    if (!member) throw new Error(`Unknown member ${userId}`);
+    member.language = language;
+    return member;
+  }
+
+  async listFamilies() {
+    return [...this.families.values()];
   }
 
   async getFamily(familyId: string) {
@@ -95,5 +109,16 @@ export class MemoryStore implements CareStore {
     if (!order || order.status !== from) return undefined;
     Object.assign(order, patch);
     return order;
+  }
+
+  async addMessage(message: FamilyMessage) {
+    this.messages.push(message);
+  }
+
+  async listMessages(familyId: string, limit = 20) {
+    return this.messages
+      .filter(m => m.familyId === familyId)
+      .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+      .slice(0, limit);
   }
 }
