@@ -1,25 +1,27 @@
-/* CareCircle simulator. Warm and calm: sand by day, plum-navy by night, coral as the one accent.
-   Green, amber and red only mean taken, due and missed or alert. Cyan only lights up while the
-   device is listening or speaking. Device screens are always dark, like the real thing. */
+/* CareCircle simulator. Platinum and pale lavender by day, deep aubergine by night, mocha as the one
+   accent. Pale lavender is only ever a surface. Green, amber and red only mean taken, due and missed or
+   alert. Cyan only lights up while the device is listening or speaking. Device screens are always dark,
+   and bezels stay charcoal, like the real thing. All text meets WCAG AA (4.5:1) on its surfaces. */
 
 :root {
   /* the page, light */
-  --page: #f5efe6;
-  --page-glow: #f9dfd2;
-  --surface: #fffcf8;
-  --surface-2: #f1e9de;
-  --line: #e0d4c3;
-  --ink: #2b2233;
-  --ink-2: #554a5c;
-  --muted: #6b6070;
-  --accent: #c24f39;
+  --page: #e5e4e2;
+  --page-glow: #ece7f2;
+  --surface: #e6e0f0;
+  --surface-2: #dcd4ea;
+  --line: #c6bcd6;
+  --ink: #2b1e16;
+  --ink-2: #4e3e33;
+  --muted: #5f5147;
+  --accent: #6f4e37;
   --accent-ink: #ffffff;
-  --accent-text: #a8432f;
-  --accent-soft: rgba(194, 79, 57, 0.12);
-  --ok: #217650;
-  --due: #8f5a00;
-  --bad: #b3302a;
-  --shadow: 40, 22, 30;
+  --accent-text: #6f4e37;
+  --accent-soft: rgba(111, 78, 55, 0.12);
+  --ok: #1d6a45;
+  --due: #784b00;
+  --bad: #a1261e;
+  --tone-elicit: #6b44a8;
+  --shadow: 43, 30, 22;
 
   /* the devices, the same in both themes */
   --cyan: #22d3ee;
@@ -32,7 +34,7 @@
   --scr-card: #251f31;
   --scr-card-2: #2f283e;
   --scr-line: #40364f;
-  --scr-accent: #f38b72;
+  --scr-accent: #e2bf9c;
   --scr-ok: #5fd39f;
   --scr-due: #f3bb4f;
   --scr-bad: #ff8b80;
@@ -51,21 +53,22 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --page: #1e1a2e;
-    --page-glow: #3b2442;
-    --surface: #282239;
-    --surface-2: #312a46;
-    --line: #463c5f;
-    --ink: #f4eff7;
-    --ink-2: #d3cadd;
-    --muted: #aca2bb;
-    --accent: #f08a72;
-    --accent-ink: #2a120c;
-    --accent-text: #f6a08b;
-    --accent-soft: rgba(240, 138, 114, 0.14);
-    --ok: #5fd39f;
-    --due: #f3bb4f;
-    --bad: #ff8b80;
+    --page: #3a0f34;
+    --page-glow: #511a49;
+    --surface: #4a1a43;
+    --surface-2: #57224f;
+    --line: #74406b;
+    --ink: #f6eef3;
+    --ink-2: #e4d4de;
+    --muted: #cdb8c7;
+    --accent: #d9b48f;
+    --accent-ink: #2b1e16;
+    --accent-text: #e4c3a2;
+    --accent-soft: rgba(217, 180, 143, 0.14);
+    --ok: #6fdca8;
+    --due: #f5c35c;
+    --bad: #ff9f94;
+    --tone-elicit: #c5a6ee;
     --shadow: 0, 0, 0;
     color-scheme: dark;
   }
@@ -232,7 +235,7 @@ svg.lucide { width: 1.1em; height: 1.1em; flex: none; }
   /* cards and controls inside a screen use the device's dark palette */
   --c-bg: var(--scr-card); --c-bg-2: var(--scr-card-2); --c-line: var(--scr-line);
   --c-ink: var(--scr-ink); --c-ink-2: var(--scr-ink-2); --c-muted: var(--scr-muted);
-  --accent: var(--scr-accent); --accent-ink: #2a120c; --accent-text: var(--scr-accent);
+  --accent: var(--scr-accent); --accent-ink: #2b1e16; --accent-text: var(--scr-accent);
   --ok: var(--scr-ok); --due: var(--scr-due); --bad: var(--scr-bad);
   --line: var(--scr-line); --surface: var(--scr-card); --surface-2: var(--scr-card-2); --ink: var(--scr-ink); --ink-2: var(--scr-ink-2); --muted: var(--scr-muted);
 }
@@ -272,7 +275,7 @@ svg.lucide { width: 1.1em; height: 1.1em; flex: none; }
 /* phone: a chat */
 .phone .convo { gap: 14px; padding: 8px 14px 18px; }
 .phone .turn, .phone .turn-past { opacity: 1; gap: 8px; }
-.phone .said-user { align-self: flex-end; max-width: 85%; background: var(--scr-accent); color: #2a120c; padding: 9px 14px; border-radius: 20px 20px 6px 20px; font-size: 16px; }
+.phone .said-user { align-self: flex-end; max-width: 85%; background: var(--scr-accent); color: #2b1e16; padding: 9px 14px; border-radius: 20px 20px 6px 20px; font-size: 16px; }
 .phone .said-alexa, .phone .turn-past .said-alexa { align-self: flex-start; max-width: 92%; background: var(--scr-card-2); padding: 10px 14px; border-radius: 20px 20px 20px 6px; font-size: 16.5px; line-height: 1.4; }
 .phone .invoking { font-size: 14px; }
 
@@ -539,10 +542,9 @@ svg.lucide { width: 1.1em; height: 1.1em; flex: none; }
 .lg-request, .rpc-request { --tone: var(--accent-text); }
 .lg-response, .rpc-response { --tone: var(--ok); }
 .lg-notification, .rpc-notification { --tone: var(--due); }
-.lg-elicitation, .rpc-elicitation { --tone: var(--maya); }
+.lg-elicitation, .rpc-elicitation { --tone: var(--tone-elicit); }
 .lg-info, .rpc-info { --tone: var(--muted); }
 .rpc-error { --tone: var(--bad); }
-@media (prefers-color-scheme: dark) { .lg-elicitation, .rpc-elicitation { --tone: #b495e6; } }
 .rpc-groups { list-style: none; margin: 0; padding: 4px 0 16px; overflow-y: auto; flex: 1; }
 .rpc-empty { padding: 16px; color: var(--muted); }
 .rpc-group { border-bottom: 1px solid var(--line); }
