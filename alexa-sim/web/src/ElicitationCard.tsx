@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { CircleCheck, ExternalLink, LoaderCircle, Lock, MessageCircleQuestion } from 'lucide-react';
+import { CircleCheck, CircleX, ExternalLink, LoaderCircle, Lock, MessageCircleQuestion } from 'lucide-react';
 import type { Elicitation, JsonSchemaProp } from './api';
 
 export type ElicitationState = 'open' | 'sending' | 'accepted' | 'declined' | 'cancelled' | 'complete' | 'failed';
@@ -83,6 +83,21 @@ export function ElicitationCard({ e, state, onAnswer, onDismiss }: Props) {
   const [values, setValues] = useState<Record<string, unknown>>(() => initialValues(e));
   const busy = state === 'sending';
   const open = state === 'open' || busy;
+
+  // An answered question folds to one line, so the reply's card stays in view.
+  const folded = e.mode === 'url' ? ['complete', 'cancelled', 'failed', 'declined'].includes(state) : !open;
+  if (folded) {
+    const done = state === 'complete' || (e.mode === 'form' && state === 'accepted');
+    return (
+      <section className="dialog dialog-folded" aria-label={e.mode === 'url' ? 'Secure page request' : 'Question from CareCircle'}>
+        <p className={`dialog-status${done ? ' dialog-done' : ''}`} role="status">
+          {done ? <CircleCheck aria-hidden="true" /> : <CircleX aria-hidden="true" />}
+          {e.mode === 'url' ? (state === 'complete' ? 'Checkout finished' : DONE_TEXT[state]) : DONE_TEXT[state]}
+          <span className="dialog-folded-q">{e.mode === 'url' ? 'notifications/elicitation/complete' : e.message}</span>
+        </p>
+      </section>
+    );
+  }
 
   if (e.mode === 'url') {
     let host = '';

@@ -89,18 +89,17 @@ interface Group {
 /** One group per turn, from the turn's first message until the next turn starts. */
 function groupByTurn(entries: RpcEntry[], turns: Turn[], who: string): Group[] {
   const starts = turns.map(t => ({ seq: t.startSeq, title: `${who} said “${t.user}”`, key: `t${t.id}` }));
-  const groups: Group[] = [{ key: 'setup', title: 'Session setup', entries: [] }];
+  const setup: Group = { key: 'setup', title: 'Session setup', entries: [] };
+  const groups = starts.map(s => ({ key: s.key, title: s.title, entries: [] as RpcEntry[] }));
   for (const e of entries) {
-    let g = groups[0];
-    for (let i = starts.length - 1; i >= 0; i--) {
-      if (e.seq > starts[i].seq) {
-        g = groups.find(x => x.key === starts[i].key) ?? (groups.push({ key: starts[i].key, title: starts[i].title, entries: [] }), groups.at(-1)!);
-        break;
-      }
-    }
-    g.entries.push(e);
+    let i = starts.length - 1;
+    while (i >= 0 && e.seq <= starts[i].seq) i--;
+    (i >= 0 ? groups[i] : setup).entries.push(e);
   }
-  return groups.filter(g => g.entries.length);
+  // A turn with no traffic stays listed: a safe refusal that called no tool is worth seeing.
+  // Turns from before a Clear have nothing to show either way.
+  const firstSeq = entries[0]?.seq ?? Infinity;
+  return [setup, ...groups].filter((g, i) => g.entries.length || (i > 0 && starts[i - 1].seq >= firstSeq));
 }
 
 function GroupView({ g, open, onToggle }: { g: Group; open: boolean; onToggle: () => void }) {
@@ -112,7 +111,9 @@ function GroupView({ g, open, onToggle }: { g: Group; open: boolean; onToggle: (
         {open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
         <span className="rpc-group-title">{g.title}</span>
         <span className="rpc-group-meta">
-          {tools.length ? (
+          {!g.entries.length ? (
+            'No MCP calls: answered without a tool'
+          ) : tools.length ? (
             <>
               <code>tools/call {tools.join(', ')}</code> · {Math.round(ms * 10) / 10} ms
             </>
@@ -121,7 +122,7 @@ function GroupView({ g, open, onToggle }: { g: Group; open: boolean; onToggle: (
           )}
         </span>
       </button>
-      {open && (
+      {open && g.entries.length > 0 && (
         <ol className="rpc-list">
           {g.entries.map(e => (
             <Row key={e.seq} e={e} />

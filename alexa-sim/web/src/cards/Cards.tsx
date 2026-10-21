@@ -278,7 +278,9 @@ function OrderSteps({ o, checkout }: { o: Order; checkout?: CheckoutState }) {
   const placed = o.status === 'placed' || checkout === 'complete';
   // The step being worked on now; everything before it is done.
   const current = placed ? 3 : 1;
-  const last = placed ? (o.fulfilment === 'delivery' ? `Arrives ${day(o.readyOn)}` : `Pick up ${day(o.readyOn)}`) : STEPS[3];
+  // The date is known once the order is placed; a card from before checkout doesn't have it.
+  const pickup = o.fulfilment === 'pickup';
+  const last = placed && o.readyOn ? (pickup ? `Pick up ${day(o.readyOn)}` : `Arrives ${day(o.readyOn)}`) : pickup ? 'Ready to pick up' : STEPS[3];
   return (
     <ol className="steps" aria-label="Order progress">
       {STEPS.map((label, i) => {

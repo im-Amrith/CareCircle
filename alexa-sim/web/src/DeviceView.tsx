@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { BellRing, MessageSquareText, TriangleAlert, X } from 'lucide-react';
 import type { Elicitation, Language, ProfileId, Today } from './api';
 import { Avatar, HomeScreen, timeOf, useFamilyClock } from './HomeScreen';
@@ -21,8 +21,54 @@ export interface DeviceViewProps {
   /** An open question shown on the companion phone of a Dot. */
   companionQuestions: (turns: Turn[]) => { e: Elicitation; node: ReactNode }[];
   onDismissNotice: (id: string) => void;
-  /** The scrolling conversation, so the app can keep the newest turn in view. */
-  bodyRef: (el: HTMLDivElement | null) => void;
+}
+
+/**
+ * Keeps the newest exchange in view: the bottom of the conversation, unless that would push the
+ * start of the newest reply off the top; then the reply's first line sits at the top and its card
+ * is a scroll away. Re-applied when anything inside resizes (an MCP App view loading, a dialog
+ * folding up), until the person scrolls by hand.
+ */
+function usePinnedConversation(key: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  const userScrolled = useRef(false);
+  const pin = useCallback(() => {
+    const el = ref.current;
+    if (!el || userScrolled.current) return;
+    const bottom = el.scrollHeight - el.clientHeight;
+    // The reply, or before there is one, an open question waiting for an answer.
+    const lead = el.querySelector<HTMLElement>('.turn-now .said-alexa') ?? el.querySelector<HTMLElement>('.turn-now .dialog-open');
+    // Measured on screen, not with offsetTop, which Large text's CSS zoom throws off.
+    const leadTop = lead ? el.scrollTop + lead.getBoundingClientRect().top - el.getBoundingClientRect().top : Infinity;
+    // Clear of the fade along the top edge.
+    el.scrollTop = Math.min(bottom, leadTop - 56);
+  }, []);
+
+  useLayoutEffect(() => {
+    userScrolled.current = false;
+    pin();
+  }, [key, pin]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => pin());
+    for (const child of el.children) ro.observe(child);
+    const byHand = () => {
+      userScrolled.current = true;
+    };
+    el.addEventListener('wheel', byHand, { passive: true });
+    el.addEventListener('touchmove', byHand, { passive: true });
+    el.addEventListener('keydown', byHand);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('wheel', byHand);
+      el.removeEventListener('touchmove', byHand);
+      el.removeEventListener('keydown', byHand);
+    };
+  }, [key, pin]);
+
+  return ref;
 }
 
 const NOTICE_ICON = { alert: TriangleAlert, reminder: BellRing, message: MessageSquareText };
@@ -88,7 +134,7 @@ function TurnView({ t, now, who, renderItem }: { t: Turn; now: boolean; who: str
         </p>
       )}
       {t.speech && (
-        <p className="said-alexa" lang={t.speech.lang === 'hi' ? 'hi' : undefined}>
+        <p className={`said-alexa${t.speech.text.length > 170 ? ' said-long' : ''}`} lang={t.speech.lang === 'hi' ? 'hi' : undefined}>
           {t.speech.text}
         </p>
       )}
@@ -103,9 +149,12 @@ function TurnView({ t, now, who, renderItem }: { t: Turn; now: boolean; who: str
 }
 
 export function DeviceView(props: DeviceViewProps) {
-  const { pane, turns, ring, interim, notices, prefs, lang, live, connected, switchingTo, renderItem, companionQuestions, onDismissNotice, bodyRef } = props;
+  const { pane, turns, ring, interim, notices, prefs, lang, live, connected, switchingTo, renderItem, companionQuestions, onDismissNotice } = props;
   const p = pane.profile;
   const lastTurn = turns.at(-1);
+  const convoRef = usePinnedConversation(
+    JSON.stringify([pane.device, turns.map(t => [t.id, t.items.length, !!t.speech, t.pending]), interim, notices.length])
+  );
   const switchEl = switchingTo && (
     <div className="switching" role="status">
       <Avatar profile={switchingTo} size="lg" />
@@ -157,7 +206,7 @@ export function DeviceView(props: DeviceViewProps) {
       {idle ? (
         <HomeScreen profile={p} live={live} lang={lang} suggestion={SUGGESTIONS[p][lang][0]} />
       ) : (
-        <div className="convo" aria-live="polite" ref={bodyRef}>
+        <div className="convo" aria-live="polite" ref={convoRef}>
           {turns.map(t => (
             <TurnView key={t.id} t={t} now={t === lastTurn && !interim} who={nameOf(p)} renderItem={renderItem} />
           ))}

@@ -9,6 +9,9 @@ import { FAMILY_TZ, nameOf } from './model';
 /** A server clock this far from ours is frozen for the demo (CARECIRCLE_NOW), so it doesn't tick. */
 const FROZEN_AFTER_MS = 6 * 60 * 60 * 1000;
 
+/** The last server time any device heard, for a device whose own live state hasn't arrived yet. */
+let lastServerTime = NaN;
+
 /** The time on the device: the server's frozen demo clock if it has one, otherwise now. */
 export function useFamilyClock(live: Today | null): Date {
   const [now, setNow] = useState(() => Date.now());
@@ -16,7 +19,8 @@ export function useFamilyClock(live: Today | null): Date {
     const timer = setInterval(() => setNow(Date.now()), 15000);
     return () => clearInterval(timer);
   }, []);
-  const server = live ? Date.parse(live.updatedAt) : NaN;
+  const server = live ? Date.parse(live.updatedAt) : lastServerTime;
+  if (live) lastServerTime = server;
   return new Date(Number.isFinite(server) && Math.abs(server - now) > FROZEN_AFTER_MS ? server : now);
 }
 
