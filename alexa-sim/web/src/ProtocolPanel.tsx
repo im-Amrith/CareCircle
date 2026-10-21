@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, PanelRightClose, PanelRightOpen, Trash2 } from 'lucide-react';
 import type { RpcEntry } from './api';
 import type { Turn } from './model';
+import { useLiquidGlass } from './fx/liquidGlass';
 
 function time(t: number) {
   const d = new Date(t);
@@ -150,6 +151,8 @@ export function ProtocolPanel({ entries, turns, profileName, protocol, collapsed
   // The newest group is open; the reader can open or fold any other.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const newest = groups.at(-1)?.key;
+  const pill = useRef<HTMLButtonElement>(null);
+  useLiquidGlass(pill, { strength: -40, dispersion: 6, enabled: collapsed });
 
   useEffect(() => {
     const el = list.current;
@@ -159,7 +162,7 @@ export function ProtocolPanel({ entries, turns, profileName, protocol, collapsed
   if (collapsed) {
     return (
       <aside className="hood hood-collapsed" aria-label="Under the hood: MCP protocol log">
-        <button type="button" className="hood-open" aria-expanded={false} onClick={onToggle}>
+        <button ref={pill} type="button" className="hood-open" aria-expanded={false} onClick={onToggle}>
           <PanelRightOpen aria-hidden="true" />
           <span>Under the hood</span>
           <span className="hood-count">{entries.length}</span>

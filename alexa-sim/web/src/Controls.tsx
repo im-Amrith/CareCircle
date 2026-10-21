@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Check, Ellipsis, Inbox, Mic, MicOff, Send } from 'lucide-react';
 import type { Language, ProfileId } from './api';
 import { Avatar } from './HomeScreen';
+import { useLiquidGlass } from './fx/liquidGlass';
 import { DEVICES, isHindi, nameOf, PROFILES, SUGGESTIONS, type Device, type Item, type Layout, type Prefs, type Ring, type Turn } from './model';
 
 /* ---------- who is talking ---------- */
@@ -15,8 +16,10 @@ interface SwitcherProps {
 }
 
 export function ProfileSwitcher({ profile, other, busy, onPick }: SwitcherProps) {
+  const glass = useRef<HTMLDivElement>(null);
+  useLiquidGlass(glass, { strength: -44, dispersion: 6 });
   return (
-    <div className="people" role="radiogroup" aria-label="Who is speaking">
+    <div className="people" role="radiogroup" aria-label="Who is speaking" ref={glass}>
       {PROFILES.map(x => (
         <button
           key={x.id}
@@ -98,9 +101,12 @@ export function ControlBar(props: BarProps) {
   const { profile, index, lang, ring, busy, draft, onDraft, onSubmit, onTalk, canListen, suggestions } = props;
   const listening = ring === 'listening';
   const micLabel = listening ? 'Stop listening' : `Push to talk as ${nameOf(profile)}`;
+  const glass = useRef<HTMLFormElement>(null);
+  useLiquidGlass(glass, { strength: -56, dispersion: 8 });
   return (
     <div className="controlbar-wrap">
       <form
+        ref={glass}
         className={`controlbar talk-${ring}`}
         onSubmit={ev => {
           ev.preventDefault();

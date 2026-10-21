@@ -3,6 +3,7 @@ import { BellRing, MessageSquareText, TriangleAlert, X } from 'lucide-react';
 import type { Elicitation, Language, ProfileId, Today } from './api';
 import { Avatar, HomeScreen, timeOf, useFamilyClock } from './HomeScreen';
 import { isHindi, nameOf, roleOf, type Item, type Notice, type Pane, type Prefs, type Ring, type Turn } from './model';
+import { VoiceOrb } from './fx/VoiceOrb';
 
 export interface DeviceViewProps {
   pane: Pane;
@@ -171,6 +172,7 @@ export function DeviceView(props: DeviceViewProps) {
         <div className={`dot dot-${ring}`}>
           {ringEl}
           <div className="dot-top" />
+          <VoiceOrb ring={ring} variant="dot" />
         </div>
         {switchEl}
         <div className="dot-caption" aria-live="polite">
@@ -216,6 +218,7 @@ export function DeviceView(props: DeviceViewProps) {
           <Notices notices={notices} onDismiss={onDismissNotice} />
         </div>
       )}
+      <VoiceOrb ring={ring} variant="screen" />
       {switchEl}
     </div>
   );
