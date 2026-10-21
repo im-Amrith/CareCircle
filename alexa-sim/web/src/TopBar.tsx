@@ -1,3 +1,4 @@
+import { AudioLines, Cpu, Plug } from 'lucide-react';
 import type { Health } from './api';
 import type { Layout } from './model';
 
@@ -6,18 +7,16 @@ interface Props {
   layout: Layout;
   onLayout: (l: Layout) => void;
   muted: boolean;
-  onMute: () => void;
 }
 
-export function TopBar({ health, layout, onLayout, muted, onMute }: Props) {
+export function TopBar({ health, layout, onLayout, muted }: Props) {
+  const reachable = !!health?.mcp.reachable;
   return (
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark" aria-hidden="true" />
-        <div>
-          <h1>CareCircle simulator</h1>
-          <p className="tagline">Voice devices driving the CareCircle MCP server</p>
-        </div>
+        <h1>CareCircle</h1>
+        <span className="brand-note">Simulated Alexa+ experience</span>
       </div>
       <div className="segmented" role="radiogroup" aria-label="Layout">
         <button type="button" role="radio" aria-checked={layout === 'single'} className={layout === 'single' ? 'on' : ''} onClick={() => onLayout('single')}>
@@ -27,20 +26,21 @@ export function TopBar({ health, layout, onLayout, muted, onMute }: Props) {
           Family view
         </button>
       </div>
-      <div className="badges" aria-label="Status">
-        <span className={`badge ${health?.mcp.reachable ? 'badge-ok' : 'badge-bad'}`} title={health?.mcp.url}>
-          MCP {health?.mcp.reachable ? `· ${health.mcp.protocol ?? 'ok'}` : 'unreachable'}
-        </span>
-        <span className="badge" title={health?.brain.reason ?? health?.brain.region}>
-          {health?.brain.mode === 'bedrock' ? `Bedrock · ${health.brain.model?.replace(/^global\./, '')}` : 'Mock router'}
-        </span>
-        <span className="badge" title={health?.speech.detail}>
+      <ul className="badges" aria-label="Status">
+        <li className={`badge ${reachable ? 'badge-ok' : 'badge-bad'}`} title={health?.mcp.url}>
+          <Plug aria-hidden="true" />
+          {reachable ? 'MCP connected' : 'MCP unreachable'}
+        </li>
+        <li className="badge" title={health?.brain.reason ?? health?.brain.region}>
+          <Cpu aria-hidden="true" />
+          {health?.brain.mode === 'bedrock' ? `Bedrock · ${health.brain.model?.replace(/^global\./, '')}` : 'Mock mode'}
+        </li>
+        <li className="badge" title={health?.speech.detail}>
+          <AudioLines aria-hidden="true" />
           {health?.speech.mode === 'polly' ? `Polly · ${health.speech.voice}` : 'Browser voice'}
-        </span>
-        <button type="button" className="badge badge-button" onClick={onMute} aria-pressed={muted}>
-          {muted ? 'Sound off' : 'Sound on'}
-        </button>
-      </div>
+          {muted ? ' · muted' : ''}
+        </li>
+      </ul>
     </header>
   );
 }

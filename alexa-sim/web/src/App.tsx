@@ -19,15 +19,12 @@ import {
   type TurnEvent
 } from './api';
 import { AppView } from './AppView';
+import { ControlBar, ProfileSwitcher, suggestionsFor } from './Controls';
 import { ResultCard } from './cards/Cards';
 import { DeviceView } from './DeviceView';
 import { ElicitationCard, type ElicitationState } from './ElicitationCard';
 import {
-  DEVICES,
-  isHindi,
   nameOf,
-  PROFILES,
-  SUGGESTIONS,
   TOOL_LABEL,
   type Item,
   type Layout,
@@ -76,7 +73,10 @@ export function App() {
   const [inbox, setInbox] = useState<Record<ProfileId, FamilyMessage[]>>(() => byProfile((): FamilyMessage[] => []));
   const [notices, setNotices] = useState<Record<ProfileId, Notice[]>>(() => byProfile((): Notice[] => []));
   const [muted, setMuted] = useState(false);
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // Under the hood starts open on wide screens and folded away on narrow ones.
+  const [panelCollapsed, setPanelCollapsed] = useState(() => window.matchMedia('(max-width: 1100px)').matches);
+  /** A pane that just changed person shows "Switching to Sam's device" for a moment. */
+  const [switching, setSwitching] = useState<Record<number, ProfileId | null>>({});
   const [health, setHealth] = useState<Health | null>(null);
   const [banner, setBanner] = useState<{ tone: 'warn' | 'error'; text: string } | null>(null);
   const [elicit, setElicit] = useState<Record<string, ElicitationState>>({});
@@ -422,70 +422,17 @@ export function App() {
     const setPane = (patch: Partial<Pane>) => setPanes(all => all.map((x, i) => (i === index ? { ...x, ...patch } : x)));
     return (
       <section key={index} className="pane" aria-label={`${nameOf(p)}'s device`} onPointerDown={() => setFocus(index)} onFocus={() => setFocus(index)}>
-        <div className="controls">
-          <div className="segmented" role="radiogroup" aria-label="Device">
-            {DEVICES.map(d => (
-              <button key={d.id} type="button" role="radio" aria-checked={pane.device === d.id} title={d.hint} className={pane.device === d.id ? 'on' : ''} onClick={() => setPane({ device: d.id })}>
-                {d.label}
-              </button>
-            ))}
-          </div>
-          <div className="segmented" role="radiogroup" aria-label="Who is speaking">
-            {PROFILES.map(x => (
-              <button
-                key={x.id}
-                type="button"
-                role="radio"
-                aria-checked={p === x.id}
-                title={x.id === other ? `${x.name} is on the other device` : x.title}
-                className={p === x.id ? 'on' : ''}
-                disabled={x.id === other}
-                onClick={() => {
-                  stopSpeaking();
-                  setPane({ profile: x.id });
-                }}
-              >
-                {x.name}
-                {busy[x.id] ? ' …' : ''}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="settings" aria-label={`${nameOf(p)}'s settings`}>
-          <div className="segmented segmented-small" role="radiogroup" aria-label="Language">
-            {(['en', 'hi'] as const).map(l => (
-              <button key={l} type="button" role="radio" aria-checked={lang === l} className={lang === l ? 'on' : ''} disabled={busy[p]} onClick={() => lang !== l && void changeLanguage(p, l)}>
-                {l === 'en' ? 'English' : 'हिंदी'}
-              </button>
-            ))}
-          </div>
-          <label className="toggle">
-            <input type="checkbox" checked={prefs[p].slow} onChange={e => setPrefs(all => ({ ...all, [p]: { ...all[p], slow: e.target.checked } }))} />
-            Slower speech
-          </label>
-          <label className="toggle">
-            <input type="checkbox" checked={prefs[p].large} onChange={e => setPrefs(all => ({ ...all, [p]: { ...all[p], large: e.target.checked } }))} />
-            Large text
-          </label>
-          {isRecipient && (
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => void remind(p)} title={`Reminders also come by themselves after ${health?.reminders?.idleSeconds ?? 45} seconds of quiet`}>
-              Remind now
-            </button>
-          )}
-          {inbox[p].length > 0 && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-small"
-              onClick={() => {
-                const m = inbox[p][0];
-                pushNotice(p, { id: m.id, kind: 'message', title: m.title, text: m.text });
-              }}
-            >
-              Inbox ({inbox[p].length})
-            </button>
-          )}
-        </div>
+        <ProfileSwitcher
+          profile={p}
+          other={other}
+          busy={busy}
+          onPick={x => {
+            stopSpeaking();
+            setPane({ profile: x });
+            setSwitching(all => ({ ...all, [index]: x }));
+            setTimeout(() => setSwitching(all => (all[index] === x ? { ...all, [index]: null } : all)), 1300);
+          }}
+        />
 
         <div className={`device device-${pane.device}`}>
           <DeviceView
@@ -498,6 +445,7 @@ export function App() {
             lang={lang}
             live={live[p]}
             connected={!!health?.mcp.reachable}
+            switchingTo={switching[index] ?? null}
             renderItem={(t, it, i) => renderItem(pane, t, it, i)}
             companionQuestions={companionQuestions}
             onDismissNotice={id => dismissNotice(p, id)}
@@ -507,50 +455,34 @@ export function App() {
           />
         </div>
 
-        <form
-          className="inputbar"
-          onSubmit={ev => {
-            ev.preventDefault();
-            void submit(p, drafts[p]);
+        <ControlBar
+          profile={p}
+          index={index}
+          lang={lang}
+          ring={rings[p]}
+          busy={busy[p]}
+          draft={drafts[p]}
+          onDraft={text => setDrafts(d => ({ ...d, [p]: text }))}
+          onSubmit={text => void submit(p, text)}
+          onTalk={() => void talk(p)}
+          canListen={canListen()}
+          suggestions={suggestionsFor(p, lang, profiles[p].turns)}
+          device={pane.device}
+          onDevice={device => setPane({ device })}
+          muted={muted}
+          onMute={() => setMuted(m => !m)}
+          onReset={() => void reset(p)}
+          onLanguage={l => void changeLanguage(p, l)}
+          prefs={prefs[p]}
+          onPrefs={next => setPrefs(all => ({ ...all, [p]: next }))}
+          onRemind={isRecipient ? () => void remind(p) : undefined}
+          remindHint={`Reminders also come by themselves after ${health?.reminders?.idleSeconds ?? 45} seconds of quiet`}
+          inboxCount={inbox[p].length}
+          onInbox={() => {
+            const m = inbox[p][0];
+            pushNotice(p, { id: m.id, kind: 'message', title: m.title, text: m.text });
           }}
-        >
-          <button
-            type="button"
-            className={`talk talk-${rings[p]}`}
-            onClick={() => void talk(p)}
-            disabled={!canListen() || busy[p]}
-            aria-label={rings[p] === 'listening' ? 'Stop listening' : 'Push to talk'}
-            title={canListen() ? `Push to talk (${lang === 'hi' ? 'Hindi' : 'English'})` : 'Voice input needs Chrome or Edge; type instead'}
-          >
-            <span className="talk-dot" aria-hidden="true" />
-          </button>
-          <label className="sr-only" htmlFor={`say-${index}`}>
-            What {nameOf(p)} says
-          </label>
-          <input
-            id={`say-${index}`}
-            value={drafts[p]}
-            onChange={e => setDrafts(d => ({ ...d, [p]: e.target.value }))}
-            placeholder={`Type what ${nameOf(p)} says…`}
-            autoComplete="off"
-            disabled={busy[p]}
-            lang={lang === 'hi' ? 'hi' : undefined}
-          />
-          <button type="submit" className="btn btn-primary" disabled={!drafts[p].trim() || busy[p]}>
-            Send
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => void reset(p)} disabled={busy[p]} aria-label={`Start a new conversation for ${nameOf(p)}`}>
-            New chat
-          </button>
-        </form>
-
-        <div className="suggestions" aria-label="Try saying">
-          {SUGGESTIONS[p][lang].map(s => (
-            <button key={s} type="button" className="suggestion" disabled={busy[p]} onClick={() => void submit(p, s)} lang={isHindi(s) ? 'hi' : undefined}>
-              {s}
-            </button>
-          ))}
-        </div>
+        />
       </section>
     );
   };
@@ -561,7 +493,6 @@ export function App() {
         health={health}
         layout={layout}
         muted={muted}
-        onMute={() => setMuted(m => !m)}
         onLayout={l => {
           setLayout(l);
           // Two different people, so the live updates are visible.
@@ -586,7 +517,9 @@ export function App() {
 
         <ProtocolPanel
           entries={visibleRpc}
+          turns={current.turns}
           profileName={nameOf(panelProfile)}
+          protocol={health?.mcp.protocol}
           collapsed={panelCollapsed}
           onToggle={() => setPanelCollapsed(c => !c)}
           onClear={() => setProfiles(all => ({ ...all, [panelProfile]: { ...all[panelProfile], clearedAt: all[panelProfile].lastSeq } }))}

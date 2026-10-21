@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { BellRing, MessageSquareText, TriangleAlert, X } from 'lucide-react';
-import type { Elicitation, Language, Today } from './api';
+import type { Elicitation, Language, ProfileId, Today } from './api';
 import { Avatar, HomeScreen, timeOf, useFamilyClock } from './HomeScreen';
-import { isHindi, nameOf, SUGGESTIONS, type Item, type Notice, type Pane, type Prefs, type Ring, type Turn } from './model';
+import { isHindi, nameOf, roleOf, SUGGESTIONS, type Item, type Notice, type Pane, type Prefs, type Ring, type Turn } from './model';
 
 export interface DeviceViewProps {
   pane: Pane;
@@ -14,6 +14,8 @@ export interface DeviceViewProps {
   lang: Language;
   live: Today | null;
   connected: boolean;
+  /** Set for a moment after the person changes, so the video shows someone else is talking now. */
+  switchingTo: ProfileId | null;
   /** One item of a turn: the invoking line, a card, an MCP App view, a question or a warning. */
   renderItem: (t: Turn, it: Item, i: number) => ReactNode;
   /** An open question shown on the companion phone of a Dot. */
@@ -101,9 +103,18 @@ function TurnView({ t, now, who, renderItem }: { t: Turn; now: boolean; who: str
 }
 
 export function DeviceView(props: DeviceViewProps) {
-  const { pane, turns, ring, interim, notices, prefs, lang, live, connected, renderItem, companionQuestions, onDismissNotice, bodyRef } = props;
+  const { pane, turns, ring, interim, notices, prefs, lang, live, connected, switchingTo, renderItem, companionQuestions, onDismissNotice, bodyRef } = props;
   const p = pane.profile;
   const lastTurn = turns.at(-1);
+  const switchEl = switchingTo && (
+    <div className="switching" role="status">
+      <Avatar profile={switchingTo} size="lg" />
+      <p>
+        Switching to {nameOf(switchingTo)}’s device
+        <span className="switching-role">{roleOf(switchingTo)}</span>
+      </p>
+    </div>
+  );
 
   if (pane.device === 'dot') {
     const ringEl = <div className={`ring ring-${ring}`} aria-hidden="true" />;
@@ -114,6 +125,7 @@ export function DeviceView(props: DeviceViewProps) {
           {ringEl}
           <div className="dot-top" />
         </div>
+        {switchEl}
         <div className="dot-caption" aria-live="polite">
           {notice && <p className={`said-alexa dot-notice-${notice.kind}`}>{notice.kind === 'message' ? `New message: ${notice.title}` : notice.text}</p>}
           {interim && <p className="said-user">“{interim}”</p>}
@@ -157,6 +169,7 @@ export function DeviceView(props: DeviceViewProps) {
           <Notices notices={notices} onDismiss={onDismissNotice} />
         </div>
       )}
+      {switchEl}
     </div>
   );
 
