@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { CircleCheck, CircleX, ExternalLink, LoaderCircle, Lock, MessageCircleQuestion } from 'lucide-react';
 import type { Elicitation, JsonSchemaProp } from './api';
 
 export type ElicitationState = 'open' | 'sending' | 'accepted' | 'declined' | 'cancelled' | 'complete' | 'failed';
@@ -83,6 +84,21 @@ export function ElicitationCard({ e, state, onAnswer, onDismiss }: Props) {
   const busy = state === 'sending';
   const open = state === 'open' || busy;
 
+  // An answered question folds to one line, so the reply's card stays in view.
+  const folded = e.mode === 'url' ? ['complete', 'cancelled', 'failed', 'declined'].includes(state) : !open;
+  if (folded) {
+    const done = state === 'complete' || (e.mode === 'form' && state === 'accepted');
+    return (
+      <section className="dialog dialog-folded" aria-label={e.mode === 'url' ? 'Secure page request' : 'Question from CareCircle'}>
+        <p className={`dialog-status${done ? ' dialog-done' : ''}`} role="status">
+          {done ? <CircleCheck aria-hidden="true" /> : <CircleX aria-hidden="true" />}
+          {e.mode === 'url' ? (state === 'complete' ? 'Checkout finished' : DONE_TEXT[state]) : DONE_TEXT[state]}
+          <span className="dialog-folded-q">{e.mode === 'url' ? 'notifications/elicitation/complete' : e.message}</span>
+        </p>
+      </section>
+    );
+  }
+
   if (e.mode === 'url') {
     let host = '';
     try {
@@ -91,44 +107,46 @@ export function ElicitationCard({ e, state, onAnswer, onDismiss }: Props) {
       /* ignore */
     }
     return (
-      <section className="card card-elicit" aria-label="Secure page request">
-        <h3 className="card-title">Secure page</h3>
-        <p className="lead">{e.message}</p>
-        <p className="muted">Opens {host || 'a secure page'} in a new tab. The link is never spoken.</p>
+      <section className={`dialog${open ? ' dialog-open' : ''}`} aria-label="Secure page request">
+        <p className="dialog-kicker">
+          <Lock aria-hidden="true" /> Secure page
+        </p>
+        <p className="dialog-question">{e.message}</p>
+        <p className="dialog-note">Opens {host || 'a secure page'} in a new tab. The link is never spoken.</p>
         {open && (
-          <div className="actions">
+          <div className="dialog-actions">
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-primary btn-big"
               disabled={busy}
               onClick={() => {
                 if (e.url) window.open(e.url, '_blank', 'noopener,noreferrer');
                 onAnswer('accept');
               }}
             >
-              Open secure page
+              <ExternalLink aria-hidden="true" /> Open secure page
             </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => onAnswer('cancel')}>
+            <button type="button" className="btn-text" disabled={busy} onClick={() => onAnswer('cancel')}>
               Cancel
             </button>
           </div>
         )}
         {state === 'accepted' && (
-          <div className="actions">
-            <p className="status-line status-awaiting_checkout" role="status">
-              Waiting for checkout to finish…
+          <div className="dialog-actions">
+            <p className="dialog-status dialog-waiting" role="status">
+              <LoaderCircle aria-hidden="true" /> Waiting for checkout to finish…
             </p>
-            <button type="button" className="btn" onClick={onDismiss}>
+            <button type="button" className="btn-text" onClick={onDismiss}>
               Done
             </button>
           </div>
         )}
         {state === 'complete' && (
-          <p className="status-line status-placed" role="status">
-            Checkout finished. The server sent notifications/elicitation/complete.
+          <p className="dialog-status dialog-done" role="status">
+            <CircleCheck aria-hidden="true" /> Checkout finished. The server sent notifications/elicitation/complete.
           </p>
         )}
-        {(state === 'cancelled' || state === 'failed' || state === 'declined') && <p className="muted">{DONE_TEXT[state]}</p>}
+        {(state === 'cancelled' || state === 'failed' || state === 'declined') && <p className="dialog-note">{DONE_TEXT[state]}</p>}
       </section>
     );
   }
@@ -136,9 +154,11 @@ export function ElicitationCard({ e, state, onAnswer, onDismiss }: Props) {
   const props = e.requestedSchema?.properties ?? {};
   const required = e.requestedSchema?.required ?? [];
   return (
-    <section className="card card-elicit" aria-label="Question from CareCircle">
-      <h3 className="card-title">Confirm</h3>
-      <p className="lead">{e.message}</p>
+    <section className={`dialog${open ? ' dialog-open' : ''}`} aria-label="Question from CareCircle">
+      <p className="dialog-kicker">
+        <MessageCircleQuestion aria-hidden="true" /> Please confirm
+      </p>
+      <p className="dialog-question">{e.message}</p>
       {open ? (
         <form
           onSubmit={ev => {
@@ -149,20 +169,20 @@ export function ElicitationCard({ e, state, onAnswer, onDismiss }: Props) {
           {Object.entries(props).map(([name, p]) => (
             <Field key={name} name={name} p={p} value={values[name]} required={required.includes(name)} onChange={v => setValues(old => ({ ...old, [name]: v }))} />
           ))}
-          <div className="actions">
-            <button type="submit" className="btn btn-primary" disabled={busy}>
+          <div className="dialog-actions">
+            <button type="submit" className="btn btn-primary btn-big" disabled={busy}>
               Accept
             </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => onAnswer('decline')}>
+            <button type="button" className="btn btn-big" disabled={busy} onClick={() => onAnswer('decline')}>
               Decline
             </button>
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => onAnswer('cancel')}>
+            <button type="button" className="btn-text" disabled={busy} onClick={() => onAnswer('cancel')}>
               Cancel
             </button>
           </div>
         </form>
       ) : (
-        <p className="muted">{DONE_TEXT[state] ?? ''}</p>
+        <p className={`dialog-status${state === 'accepted' ? ' dialog-done' : ''}`}>{DONE_TEXT[state] ?? ''}</p>
       )}
     </section>
   );

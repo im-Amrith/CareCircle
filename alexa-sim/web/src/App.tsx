@@ -15,39 +15,28 @@ import {
   type Language,
   type ProfileId,
   type RpcEntry,
-  type Speech,
   type Today,
-  type ToolCall,
-  type ToolResult,
-  type TurnEvent,
-  type Warning
+  type TurnEvent
 } from './api';
 import { AppView } from './AppView';
+import { ControlBar, ProfileSwitcher, suggestionsFor } from './Controls';
 import { ResultCard } from './cards/Cards';
+import { DeviceView } from './DeviceView';
 import { ElicitationCard, type ElicitationState } from './ElicitationCard';
+import {
+  nameOf,
+  TOOL_LABEL,
+  type Item,
+  type Layout,
+  type Notice,
+  type Pane,
+  type Prefs,
+  type Ring,
+  type Turn
+} from './model';
 import { ProtocolPanel } from './ProtocolPanel';
+import { TopBar } from './TopBar';
 import { announce, canListen, listenOnce, speak, stopSpeaking } from './voice';
-
-/* ---------- model ---------- */
-
-type Device = 'show8' | 'show15' | 'dot' | 'phone';
-type Ring = 'idle' | 'listening' | 'thinking' | 'speaking' | 'notify';
-type Layout = 'single' | 'family';
-
-type Item =
-  | { kind: 'call'; call: ToolCall }
-  | { kind: 'result'; result: ToolResult }
-  | { kind: 'elicitation'; e: Elicitation }
-  | { kind: 'warning'; w: Warning };
-
-interface Turn {
-  id: number;
-  user: string;
-  items: Item[];
-  speech?: Speech;
-  error?: string;
-  pending: boolean;
-}
 
 interface ProfileState {
   turns: Turn[];
@@ -59,67 +48,8 @@ interface ProfileState {
   clearedAt: number;
 }
 
-/** Something on the device that nobody asked for: a family alert, a dose reminder, a new summary. */
-interface Notice {
-  id: string;
-  kind: 'alert' | 'reminder' | 'message';
-  title: string;
-  text: string;
-}
-
-/** Per-person accessibility settings, kept on the device. */
-interface Prefs {
-  slow: boolean;
-  large: boolean;
-}
-
-interface Pane {
-  profile: ProfileId;
-  device: Device;
-}
-
-const PROFILES: { id: ProfileId; name: string; role: string }[] = [
-  { id: 'rose', name: 'Rose', role: 'cared for' },
-  { id: 'sam', name: 'Sam', role: 'son, coordinator' },
-  { id: 'maya', name: 'Maya', role: 'daughter, helper' }
-];
-const nameOf = (p: ProfileId) => PROFILES.find(x => x.id === p)!.name;
-
-const DEVICES: { id: Device; label: string; hint: string }[] = [
-  { id: 'show8', label: 'Show 8', hint: '8-inch smart display, landscape' },
-  { id: 'show15', label: 'Show 15', hint: '15-inch smart display, landscape' },
-  { id: 'dot', label: 'Dot', hint: 'Smart speaker, no screen' },
-  { id: 'phone', label: 'Phone', hint: 'Phone app' }
-];
-
-const SUGGESTIONS: Record<ProfileId, Record<Language, string[]>> = {
-  rose: {
-    en: ['Good morning', 'I took my morning pills', 'I had a fall in the kitchen', 'Should I take an extra blood pressure tablet?', 'What do I take tonight?', 'Say that again', 'Talk to me in Hindi'],
-    hi: ['सुप्रभात', 'मैंने दवा ले ली', 'मैं रसोई में गिर गई', 'एक और गोली ले लूँ?', 'आज रात कौन सी दवा लेनी है', 'फिर से बोलो', 'Speak English']
-  },
-  sam: {
-    en: ['How is Mom today?', 'Is she running low on anything?', 'Reorder it', 'Any updates?', 'Send everyone today’s summary'],
-    hi: ['माँ का आज का हाल कैसा है', 'दवाई खत्म हो रही है क्या?', 'Speak English']
-  },
-  maya: {
-    en: ['How is Mom today?', 'What does Mom take tonight?', 'Mom says her knee hurts', 'Say that again'],
-    hi: ['माँ का आज का हाल कैसा है', 'Speak English']
-  }
-};
-
 const emptyProfile = (): ProfileState => ({ turns: [], rpc: [], lastSeq: 0, polledSeq: 0, clearedAt: 0 });
 const byProfile = <T,>(make: () => T): Record<ProfileId, T> => ({ rose: make(), sam: make(), maya: make() });
-
-const TOOL_LABEL: Record<string, string> = {
-  get_care_status: 'Checking today’s care status…',
-  list_medications: 'Looking up the medicine schedule…',
-  log_medication: 'Logging the dose…',
-  check_refills: 'Checking supplies…',
-  request_refill: 'Starting a refill…',
-  log_wellbeing: 'Adding a note…',
-  set_language: 'Changing the language…',
-  send_daily_summary: 'Sending today’s summary…'
-};
 
 let nextTurnId = 1;
 
@@ -143,7 +73,10 @@ export function App() {
   const [inbox, setInbox] = useState<Record<ProfileId, FamilyMessage[]>>(() => byProfile((): FamilyMessage[] => []));
   const [notices, setNotices] = useState<Record<ProfileId, Notice[]>>(() => byProfile((): Notice[] => []));
   const [muted, setMuted] = useState(false);
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // Under the hood starts open on wide screens and folded away on narrow ones.
+  const [panelCollapsed, setPanelCollapsed] = useState(() => window.matchMedia('(max-width: 1100px)').matches);
+  /** A pane that just changed person shows "Switching to Sam's device" for a moment. */
+  const [switching, setSwitching] = useState<Record<number, ProfileId | null>>({});
   const [health, setHealth] = useState<Health | null>(null);
   const [banner, setBanner] = useState<{ tone: 'warn' | 'error'; text: string } | null>(null);
   const [elicit, setElicit] = useState<Record<string, ElicitationState>>({});
@@ -152,7 +85,6 @@ export function App() {
   const listeners = useRef<Partial<Record<ProfileId, { stop: () => void }>>>({});
   /** Server elicitationId -> our elicitation id, to match notifications/elicitation/complete. */
   const urlElicitations = useRef(new Map<string, string>());
-  const screenBodies = useRef<Partial<Record<number, HTMLDivElement | null>>>({});
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const prefsRef = useRef(prefs);
@@ -270,7 +202,7 @@ export function App() {
       // Answering a reminder (or anything else) means it has been heard.
       setNotices(all => ({ ...all, [p]: all[p].filter(n => n.kind !== 'reminder') }));
       const id = nextTurnId++;
-      setProfiles(all => ({ ...all, [p]: { ...all[p], turns: [...all[p].turns, { id, user: text, items: [], pending: true }] } }));
+      setProfiles(all => ({ ...all, [p]: { ...all[p], turns: [...all[p].turns, { id, user: text, items: [], pending: true, startSeq: all[p].lastSeq }] } }));
       setBusy(b => ({ ...b, [p]: true }));
       setRing(p, 'thinking');
       let spoke: Promise<void> | null = null;
@@ -394,11 +326,6 @@ export function App() {
     }
   }, []);
 
-  // Keep the newest exchange in view on each device screen.
-  useEffect(() => {
-    for (const el of Object.values(screenBodies.current)) if (el) el.scrollTop = el.scrollHeight;
-  }, [profiles, elicit, interims, notices, panes, layout]);
-
   const current = profiles[panelProfile];
   const visibleRpc = useMemo(() => current.rpc.filter(e => e.seq > current.clearedAt), [current.rpc, current.clearedAt]);
 
@@ -410,156 +337,61 @@ export function App() {
     return elicit[url.e.id] === 'complete' ? ('complete' as const) : ('pending' as const);
   };
 
-  const renderTurns = (p: ProfileId) =>
-    profiles[p].turns.map(t => (
-      <article key={t.id} className="turn" aria-busy={t.pending}>
-        <p className="said-user">
-          <span className="sr-only">{nameOf(p)} said: </span>“{t.user}”
-        </p>
-        {t.items.map((it, i) => {
-          if (it.kind === 'call')
-            return t.pending && !t.items.some(x => x.kind === 'result' && x.result.id === it.call.id) ? (
-              <p key={i} className="invoking" role="status">
-                {it.call.invoking ?? TOOL_LABEL[it.call.name] ?? `Calling ${it.call.name}…`}
-              </p>
-            ) : null;
-          if (it.kind === 'result') {
-            const key = `${t.id}:${String(it.result.id)}`;
-            if (it.result.uiResourceUri && !it.result.isError && health?.sandboxUrl && !appFailed[key]) {
-              const call = t.items.find((x): x is Extract<Item, { kind: 'call' }> => x.kind === 'call' && x.call.id === it.result.id);
-              return (
-                <AppView
-                  key={key}
-                  profile={p}
-                  result={it.result}
-                  args={call?.call.arguments ?? {}}
-                  sandboxUrl={health.sandboxUrl}
-                  live={live[p]}
-                  locale={langOf(p) === 'hi' ? 'hi-IN' : 'en-IN'}
-                  largeText={prefs[p].large}
-                  onMessage={text => {
-                    if (busy[p]) return false;
-                    void submit(p, text);
-                    return true;
-                  }}
-                  onFail={reason => setAppFailed(f => ({ ...f, [key]: reason }))}
-                />
-              );
-            }
-            return <ResultCard key={i} result={it.result} checkout={checkoutOf(t)} />;
-          }
-          if (it.kind === 'elicitation')
-            return <ElicitationCard key={i} e={it.e} state={elicit[it.e.id] ?? 'open'} onAnswer={(a, c) => answer(it.e, a, c)} onDismiss={() => setElicit(s => ({ ...s, [it.e.id]: 'complete' }))} />;
-          return (
-            <p key={i} className="turn-warning" role="alert">
-              ⚠ {it.w.message}
-            </p>
-          );
-        })}
-        {t.speech && (
-          <p className="said-alexa" lang={t.speech.lang === 'hi' ? 'hi' : undefined}>
-            {t.speech.text}
-          </p>
-        )}
-        {t.pending && !t.speech && !t.items.length && (
-          <p className="invoking" role="status">
-            Thinking…
-          </p>
-        )}
-        {t.error && (
-          <p className="turn-error" role="alert">
-            {t.error}
-          </p>
-        )}
-      </article>
-    ));
+  const elicitationCard = (e: Elicitation) => (
+    <ElicitationCard key={e.id} e={e} state={elicit[e.id] ?? 'open'} onAnswer={(a, c) => answer(e, a, c)} onDismiss={() => setElicit(s => ({ ...s, [e.id]: 'complete' }))} />
+  );
 
-  const renderNotices = (p: ProfileId) =>
-    notices[p].length > 0 && (
-      <div className="notices" role="region" aria-label="Notifications">
-        {notices[p].map(n => (
-          <div key={n.id} className={`notice notice-${n.kind}`} role={n.kind === 'alert' ? 'alert' : 'status'}>
-            <div className="notice-head">
-              <strong>{n.kind === 'message' ? `Message · ${n.title}` : n.title}</strong>
-              <button type="button" className="btn btn-ghost notice-close" onClick={() => dismissNotice(p, n.id)} aria-label="Dismiss">
-                ✕
-              </button>
-            </div>
-            <p className={n.kind === 'message' ? 'notice-text notice-pre' : 'notice-text'} lang={/[ऀ-ॿ]/.test(n.text) ? 'hi' : undefined}>
-              {n.kind === 'message' ? n.text.split('\n').slice(2).join('\n') : n.text}
-            </p>
-          </div>
-        ))}
-      </div>
-    );
-
-  const renderScreen = (pane: Pane, index: number) => {
+  /** The phone shows MCP App views; the Show devices keep to native cards, sized for across the room. */
+  const renderItem = (pane: Pane, t: Turn, it: Item, i: number) => {
     const p = pane.profile;
-    const ring = rings[p];
-    const ringEl = <div className={`ring ring-${ring}`} aria-hidden="true" />;
-    const turns = profiles[p].turns;
-    const lastTurn = turns.at(-1);
-    const interim = interims[p];
-    if (pane.device === 'dot') {
-      const pendingElicitations = turns.flatMap(t => t.items.filter((i): i is Extract<Item, { kind: 'elicitation' }> => i.kind === 'elicitation'));
-      const notice = notices[p].at(-1);
-      return (
-        <div className="dot-wrap">
-          <div className={`dot dot-${ring}`}>
-            {ringEl}
-            <div className="dot-top" />
-          </div>
-          <div className="dot-caption" aria-live="polite">
-            {notice && <p className={`said-alexa dot-notice-${notice.kind}`}>{notice.kind === 'message' ? `New message: ${notice.title}` : notice.text}</p>}
-            {interim && <p className="said-user">“{interim}”</p>}
-            {lastTurn && !interim && <p className="said-user">“{lastTurn.user}”</p>}
-            {lastTurn?.speech && <p className="said-alexa">{lastTurn.speech.text}</p>}
-            {lastTurn?.items.filter(i => i.kind === 'warning').map((i, k) => (
-              <p key={k} className="turn-warning" role="alert">
-                ⚠ {(i as { w: Warning }).w.message}
-              </p>
-            ))}
-          </div>
-          {pendingElicitations
-            .filter(i => {
-              const st = elicit[i.e.id] ?? 'open';
-              return st === 'open' || st === 'sending' || (i.e.mode === 'url' && st === 'accepted');
-            })
-            .map(i => (
-              <div key={i.e.id} className="dot-companion">
-                <p className="muted">On the companion phone:</p>
-                <ElicitationCard e={i.e} state={elicit[i.e.id] ?? 'open'} onAnswer={(a, c) => answer(i.e, a, c)} onDismiss={() => setElicit(s => ({ ...s, [i.e.id]: 'complete' }))} />
-              </div>
-            ))}
-        </div>
-      );
+    if (it.kind === 'call')
+      return t.pending && !t.items.some(x => x.kind === 'result' && x.result.id === it.call.id) ? (
+        <p key={i} className="invoking" role="status">
+          {it.call.invoking ?? TOOL_LABEL[it.call.name] ?? `Calling ${it.call.name}…`}
+        </p>
+      ) : null;
+    if (it.kind === 'result') {
+      const key = `${t.id}:${String(it.result.id)}`;
+      if (pane.device === 'phone' && it.result.uiResourceUri && !it.result.isError && health?.sandboxUrl && !appFailed[key]) {
+        const call = t.items.find((x): x is Extract<Item, { kind: 'call' }> => x.kind === 'call' && x.call.id === it.result.id);
+        return (
+          <AppView
+            key={key}
+            profile={p}
+            result={it.result}
+            args={call?.call.arguments ?? {}}
+            sandboxUrl={health.sandboxUrl}
+            live={live[p]}
+            locale={langOf(p) === 'hi' ? 'hi-IN' : 'en-IN'}
+            largeText={prefs[p].large}
+            onMessage={text => {
+              if (busy[p]) return false;
+              void submit(p, text);
+              return true;
+            }}
+            onFail={reason => setAppFailed(f => ({ ...f, [key]: reason }))}
+          />
+        );
+      }
+      return <ResultCard key={i} result={it.result} checkout={checkoutOf(t)} />;
     }
-    const suggestion = SUGGESTIONS[p][langOf(p)][0];
+    if (it.kind === 'elicitation') return elicitationCard(it.e);
     return (
-      <div className={`frame frame-${pane.device}`}>
-        <div className={`screen${prefs[p].large ? ' screen-large' : ''}`}>
-          <header className="screen-bar">
-            <span>{pane.device === 'phone' ? `CareCircle · ${nameOf(p)}` : nameOf(p)}</span>
-            <span className="screen-time">{health?.mcp.reachable ? 'Connected' : 'Offline'}</span>
-          </header>
-          <div className="screen-body" aria-live="polite" ref={el => {
-              screenBodies.current[index] = el;
-            }}>
-            {turns.length === 0 && !notices[p].length && (
-              <div className="screen-idle">
-                <p className="idle-hello">{langOf(p) === 'hi' ? `नमस्ते ${nameOf(p)}` : `Hi ${nameOf(p)}`}</p>
-                <p className="muted">Try “{suggestion}”</p>
-              </div>
-            )}
-            {renderTurns(p)}
-            {interim && <p className="said-user said-interim">“{interim}”</p>}
-            {renderNotices(p)}
-          </div>
-          {ringEl}
-        </div>
-      </div>
+      <p key={i} className="turn-warning" role="alert">
+        ⚠ {it.w.message}
+      </p>
     );
   };
+
+  /** Questions a Dot can't show, so they go to the companion phone. */
+  const companionQuestions = (turns: Turn[]) =>
+    turns
+      .flatMap(t => t.items.filter((i): i is Extract<Item, { kind: 'elicitation' }> => i.kind === 'elicitation'))
+      .filter(i => {
+        const st = elicit[i.e.id] ?? 'open';
+        return st === 'open' || st === 'sending' || (i.e.mode === 'url' && st === 'accepted');
+      })
+      .map(i => ({ e: i.e, node: elicitationCard(i.e) }));
 
   const renderPane = (pane: Pane, index: number) => {
     const p = pane.profile;
@@ -569,165 +401,80 @@ export function App() {
     const setPane = (patch: Partial<Pane>) => setPanes(all => all.map((x, i) => (i === index ? { ...x, ...patch } : x)));
     return (
       <section key={index} className="pane" aria-label={`${nameOf(p)}'s device`} onPointerDown={() => setFocus(index)} onFocus={() => setFocus(index)}>
-        <div className="controls">
-          <div className="segmented" role="radiogroup" aria-label="Device">
-            {DEVICES.map(d => (
-              <button key={d.id} type="button" role="radio" aria-checked={pane.device === d.id} title={d.hint} className={pane.device === d.id ? 'on' : ''} onClick={() => setPane({ device: d.id })}>
-                {d.label}
-              </button>
-            ))}
-          </div>
-          <div className="segmented" role="radiogroup" aria-label="Who is speaking">
-            {PROFILES.map(x => (
-              <button
-                key={x.id}
-                type="button"
-                role="radio"
-                aria-checked={p === x.id}
-                title={x.id === other ? `${x.name} is on the other device` : x.role}
-                className={p === x.id ? 'on' : ''}
-                disabled={x.id === other}
-                onClick={() => {
-                  stopSpeaking();
-                  setPane({ profile: x.id });
-                }}
-              >
-                {x.name}
-                {busy[x.id] ? ' …' : ''}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="settings" aria-label={`${nameOf(p)}'s settings`}>
-          <div className="segmented segmented-small" role="radiogroup" aria-label="Language">
-            {(['en', 'hi'] as const).map(l => (
-              <button key={l} type="button" role="radio" aria-checked={lang === l} className={lang === l ? 'on' : ''} disabled={busy[p]} onClick={() => lang !== l && void changeLanguage(p, l)}>
-                {l === 'en' ? 'English' : 'हिंदी'}
-              </button>
-            ))}
-          </div>
-          <label className="toggle">
-            <input type="checkbox" checked={prefs[p].slow} onChange={e => setPrefs(all => ({ ...all, [p]: { ...all[p], slow: e.target.checked } }))} />
-            Slower speech
-          </label>
-          <label className="toggle">
-            <input type="checkbox" checked={prefs[p].large} onChange={e => setPrefs(all => ({ ...all, [p]: { ...all[p], large: e.target.checked } }))} />
-            Large text
-          </label>
-          {isRecipient && (
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => void remind(p)} title={`Reminders also come by themselves after ${health?.reminders?.idleSeconds ?? 45} seconds of quiet`}>
-              Remind now
-            </button>
-          )}
-          {inbox[p].length > 0 && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-small"
-              onClick={() => {
-                const m = inbox[p][0];
-                pushNotice(p, { id: m.id, kind: 'message', title: m.title, text: m.text });
-              }}
-            >
-              Inbox ({inbox[p].length})
-            </button>
-          )}
-        </div>
-
-        <div className={`device device-${pane.device}`}>{renderScreen(pane, index)}</div>
-
-        <form
-          className="inputbar"
-          onSubmit={ev => {
-            ev.preventDefault();
-            void submit(p, drafts[p]);
+        <ProfileSwitcher
+          profile={p}
+          other={other}
+          busy={busy}
+          onPick={x => {
+            stopSpeaking();
+            setPane({ profile: x });
+            setSwitching(all => ({ ...all, [index]: x }));
+            setTimeout(() => setSwitching(all => (all[index] === x ? { ...all, [index]: null } : all)), 1300);
           }}
-        >
-          <button
-            type="button"
-            className={`talk talk-${rings[p]}`}
-            onClick={() => void talk(p)}
-            disabled={!canListen() || busy[p]}
-            aria-label={rings[p] === 'listening' ? 'Stop listening' : 'Push to talk'}
-            title={canListen() ? `Push to talk (${lang === 'hi' ? 'Hindi' : 'English'})` : 'Voice input needs Chrome or Edge; type instead'}
-          >
-            <span className="talk-dot" aria-hidden="true" />
-          </button>
-          <label className="sr-only" htmlFor={`say-${index}`}>
-            What {nameOf(p)} says
-          </label>
-          <input
-            id={`say-${index}`}
-            value={drafts[p]}
-            onChange={e => setDrafts(d => ({ ...d, [p]: e.target.value }))}
-            placeholder={`Type what ${nameOf(p)} says…`}
-            autoComplete="off"
-            disabled={busy[p]}
-            lang={lang === 'hi' ? 'hi' : undefined}
-          />
-          <button type="submit" className="btn btn-primary" disabled={!drafts[p].trim() || busy[p]}>
-            Send
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => void reset(p)} disabled={busy[p]} aria-label={`Start a new conversation for ${nameOf(p)}`}>
-            New chat
-          </button>
-        </form>
+        />
 
-        <div className="suggestions" aria-label="Try saying">
-          {SUGGESTIONS[p][lang].map(s => (
-            <button key={s} type="button" className="suggestion" disabled={busy[p]} onClick={() => void submit(p, s)} lang={/[ऀ-ॿ]/.test(s) ? 'hi' : undefined}>
-              {s}
-            </button>
-          ))}
+        <div className={`device device-${pane.device}`}>
+          <DeviceView
+            pane={pane}
+            turns={profiles[p].turns}
+            ring={rings[p]}
+            interim={interims[p]}
+            notices={notices[p]}
+            prefs={prefs[p]}
+            lang={lang}
+            live={live[p]}
+            connected={!!health?.mcp.reachable}
+            switchingTo={switching[index] ?? null}
+            renderItem={(t, it, i) => renderItem(pane, t, it, i)}
+            companionQuestions={companionQuestions}
+            onDismissNotice={id => dismissNotice(p, id)}
+          />
         </div>
+
+        <ControlBar
+          profile={p}
+          index={index}
+          lang={lang}
+          ring={rings[p]}
+          busy={busy[p]}
+          draft={drafts[p]}
+          onDraft={text => setDrafts(d => ({ ...d, [p]: text }))}
+          onSubmit={text => void submit(p, text)}
+          onTalk={() => void talk(p)}
+          canListen={canListen()}
+          suggestions={suggestionsFor(p, lang, profiles[p].turns)}
+          device={pane.device}
+          onDevice={device => setPane({ device })}
+          muted={muted}
+          onMute={() => setMuted(m => !m)}
+          onReset={() => void reset(p)}
+          onLanguage={l => void changeLanguage(p, l)}
+          prefs={prefs[p]}
+          onPrefs={next => setPrefs(all => ({ ...all, [p]: next }))}
+          onRemind={isRecipient ? () => void remind(p) : undefined}
+          remindHint={`Reminders also come by themselves after ${health?.reminders?.idleSeconds ?? 45} seconds of quiet`}
+          inboxCount={inbox[p].length}
+          onInbox={() => {
+            const m = inbox[p][0];
+            pushNotice(p, { id: m.id, kind: 'message', title: m.title, text: m.text });
+          }}
+        />
       </section>
     );
   };
 
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <div>
-            <h1>CareCircle simulator</h1>
-            <p className="tagline">Voice devices driving the CareCircle MCP server</p>
-          </div>
-        </div>
-        <div className="segmented" role="radiogroup" aria-label="Layout">
-          <button type="button" role="radio" aria-checked={layout === 'single'} className={layout === 'single' ? 'on' : ''} onClick={() => setLayout('single')}>
-            One device
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={layout === 'family'}
-            className={layout === 'family' ? 'on' : ''}
-            title="Two family members side by side, updating live"
-            onClick={() => {
-              setLayout('family');
-              // Two different people, so the live updates are visible.
-              setPanes(all => (all[0].profile === all[1].profile ? [all[0], { ...all[1], profile: all[0].profile === 'sam' ? 'rose' : 'sam' }] : all));
-            }}
-          >
-            Family view
-          </button>
-        </div>
-        <div className="badges" aria-label="Status">
-          <span className={`badge ${health?.mcp.reachable ? 'badge-ok' : 'badge-bad'}`} title={health?.mcp.url}>
-            MCP {health?.mcp.reachable ? `· ${health.mcp.protocol ?? 'ok'}` : 'unreachable'}
-          </span>
-          <span className="badge" title={health?.brain.reason ?? health?.brain.region}>
-            {health?.brain.mode === 'bedrock' ? `Bedrock · ${health.brain.model?.replace(/^global\./, '')}` : 'Mock router'}
-          </span>
-          <span className="badge" title={health?.speech.detail}>
-            {health?.speech.mode === 'polly' ? `Polly · ${health.speech.voice}` : 'Browser voice'}
-          </span>
-          <button type="button" className="badge badge-button" onClick={() => setMuted(m => !m)} aria-pressed={muted}>
-            {muted ? 'Sound off' : 'Sound on'}
-          </button>
-        </div>
-      </header>
+      <TopBar
+        health={health}
+        layout={layout}
+        muted={muted}
+        onLayout={l => {
+          setLayout(l);
+          // Two different people, so the live updates are visible.
+          if (l === 'family') setPanes(all => (all[0].profile === all[1].profile ? [all[0], { ...all[1], profile: all[0].profile === 'sam' ? 'rose' : 'sam' }] : all));
+        }}
+      />
 
       {banner && (
         <div className={`banner banner-${banner.tone}`} role="alert">
@@ -746,7 +493,9 @@ export function App() {
 
         <ProtocolPanel
           entries={visibleRpc}
+          turns={current.turns}
           profileName={nameOf(panelProfile)}
+          protocol={health?.mcp.protocol}
           collapsed={panelCollapsed}
           onToggle={() => setPanelCollapsed(c => !c)}
           onClear={() => setProfiles(all => ({ ...all, [panelProfile]: { ...all[panelProfile], clearedAt: all[panelProfile].lastSeq } }))}

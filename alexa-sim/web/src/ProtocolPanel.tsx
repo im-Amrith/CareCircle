@@ -1,13 +1,41 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, PanelRightClose, PanelRightOpen, Trash2 } from 'lucide-react';
 import type { RpcEntry } from './api';
+import type { Turn } from './model';
 
 function time(t: number) {
   const d = new Date(t);
   return `${d.toLocaleTimeString('en-GB', { hour12: false })}.${String(d.getMilliseconds()).padStart(3, '0')}`;
 }
 
+/**
+ * The client first asks for a newer protocol version with server/discover; a 2025-11-25 server
+ * rejects it and the client falls back to initialize. That's expected, so it isn't shown as an error.
+ */
+const isVersionProbe = (e: RpcEntry) => e.method === 'server/discover';
+
+type Tone = 'request' | 'response' | 'notification' | 'elicitation' | 'info' | 'error';
+
+function toneOf(e: RpcEntry): Tone {
+  if (isVersionProbe(e)) return 'info';
+  if (e.method?.startsWith('elicitation/') || e.method === 'notifications/elicitation/complete') return 'elicitation';
+  if (e.kind === 'error') return 'error';
+  if (e.kind === 'request' && e.dir === 'in') return 'elicitation';
+  return e.kind as Tone;
+}
+
+const TONE_LABEL: Record<Tone, string> = {
+  request: 'request',
+  response: 'response',
+  notification: 'notification',
+  elicitation: 'elicitation',
+  info: 'version probe',
+  error: 'error'
+};
+
 function summary(e: RpcEntry): string {
   const body = e.body as any;
+  if (isVersionProbe(e)) return e.kind === 'request' ? 'asks for a newer version' : 'not supported, so initialize';
   if (e.method === 'tools/call' && e.kind === 'request')
     return `${body?.params?.name ?? ''}${body?.params?._meta?.['carecircle.sim/origin'] === 'app' ? ' · from app view' : ''}`;
   if (e.method === 'resources/read' && e.kind === 'request') return body?.params?.uri ?? '';
@@ -27,81 +55,156 @@ function summary(e: RpcEntry): string {
 function Row({ e }: { e: RpcEntry }) {
   const [open, setOpen] = useState(false);
   const out = e.dir === 'out';
+  const tone = toneOf(e);
   const label = e.method ?? (e.kind === 'error' ? 'error' : 'response');
   return (
-    <li className={`rpc rpc-${e.dir} rpc-${e.kind}`}>
+    <li className={`rpc rpc-${tone}`}>
       <button type="button" className="rpc-head" aria-expanded={open} onClick={() => setOpen(o => !o)}>
-        <span className="rpc-arrow" aria-label={out ? 'client to server' : 'server to client'}>
+        <span className="rpc-arrow" aria-label={out ? 'simulator to server' : 'server to simulator'}>
           {out ? '→' : '←'}
         </span>
-        <span className="rpc-method">{label}</span>
-        <span className={`rpc-kind rpc-kind-${e.kind}`}>{e.kind === 'request' && e.dir === 'in' ? 'server request' : e.kind}</span>
-        {e.id !== null && e.id !== undefined && <span className="rpc-id">#{String(e.id)}</span>}
-        <span className="rpc-sum">{summary(e)}</span>
+        <span className="rpc-main">
+          <span className="rpc-method">{label}</span>
+          <span className="rpc-sum">{summary(e)}</span>
+        </span>
+        <span className="rpc-kind">{e.kind === 'request' && e.dir === 'in' ? 'server request' : TONE_LABEL[tone]}</span>
         <span className="rpc-ms">{e.ms !== null && e.ms !== undefined ? `${e.ms} ms` : time(e.t)}</span>
       </button>
-      {e.note && <p className="rpc-note">{e.note}</p>}
+      {e.note ? (
+        <p className="rpc-note">{e.note}</p>
+      ) : (
+        isVersionProbe(e) && e.dir === 'in' && <p className="rpc-note">Expected: the client tries the newest MCP version first and falls back to initialize.</p>
+      )}
       {open && <pre className="rpc-body">{JSON.stringify(e.body, null, 2)}</pre>}
+    </li>
+  );
+}
+
+interface Group {
+  key: string;
+  title: string;
+  entries: RpcEntry[];
+}
+
+/** One group per turn, from the turn's first message until the next turn starts. */
+function groupByTurn(entries: RpcEntry[], turns: Turn[], who: string): Group[] {
+  const starts = turns.map(t => ({ seq: t.startSeq, title: `${who} said “${t.user}”`, key: `t${t.id}` }));
+  const setup: Group = { key: 'setup', title: 'Session setup', entries: [] };
+  const groups = starts.map(s => ({ key: s.key, title: s.title, entries: [] as RpcEntry[] }));
+  for (const e of entries) {
+    let i = starts.length - 1;
+    while (i >= 0 && e.seq <= starts[i].seq) i--;
+    (i >= 0 ? groups[i] : setup).entries.push(e);
+  }
+  // A turn with no traffic stays listed: a safe refusal that called no tool is worth seeing.
+  // Turns from before a Clear have nothing to show either way.
+  const firstSeq = entries[0]?.seq ?? Infinity;
+  return [setup, ...groups].filter((g, i) => g.entries.length || (i > 0 && starts[i - 1].seq >= firstSeq));
+}
+
+function GroupView({ g, open, onToggle }: { g: Group; open: boolean; onToggle: () => void }) {
+  const tools = g.entries.filter(e => e.method === 'tools/call' && e.kind === 'request').map(e => (e.body as any)?.params?.name as string);
+  const ms = g.entries.filter(e => e.kind === 'response' && e.method === 'tools/call').reduce((sum, e) => sum + (e.ms ?? 0), 0);
+  return (
+    <li className="rpc-group">
+      <button type="button" className="rpc-group-head" aria-expanded={open} onClick={onToggle}>
+        {open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+        <span className="rpc-group-title">{g.title}</span>
+        <span className="rpc-group-meta">
+          {!g.entries.length ? (
+            'No MCP calls: answered without a tool'
+          ) : tools.length ? (
+            <>
+              <code>tools/call {tools.join(', ')}</code> · {Math.round(ms * 10) / 10} ms
+            </>
+          ) : (
+            `${g.entries.length} messages`
+          )}
+        </span>
+      </button>
+      {open && g.entries.length > 0 && (
+        <ol className="rpc-list">
+          {g.entries.map(e => (
+            <Row key={e.seq} e={e} />
+          ))}
+        </ol>
+      )}
     </li>
   );
 }
 
 interface Props {
   entries: RpcEntry[];
+  turns: Turn[];
   profileName: string;
+  protocol?: string;
   collapsed: boolean;
   onToggle: () => void;
   onClear: () => void;
 }
 
-export function ProtocolPanel({ entries, profileName, collapsed, onToggle, onClear }: Props) {
+export function ProtocolPanel({ entries, turns, profileName, protocol, collapsed, onToggle, onClear }: Props) {
   const list = useRef<HTMLOListElement>(null);
   const stick = useRef(true);
+  const groups = useMemo(() => groupByTurn(entries, turns, profileName), [entries, turns, profileName]);
+  // The newest group is open; the reader can open or fold any other.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const newest = groups.at(-1)?.key;
 
   useEffect(() => {
     const el = list.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [entries.length]);
+  }, [entries.length, collapsed]);
+
+  if (collapsed) {
+    return (
+      <aside className="hood hood-collapsed" aria-label="Under the hood: MCP protocol log">
+        <button type="button" className="hood-open" aria-expanded={false} onClick={onToggle}>
+          <PanelRightOpen aria-hidden="true" />
+          <span>Under the hood</span>
+          <span className="hood-count">{entries.length}</span>
+        </button>
+      </aside>
+    );
+  }
 
   return (
-    <aside className={`protocol ${collapsed ? 'protocol-collapsed' : ''}`} aria-label="MCP protocol log">
-      <header className="protocol-head">
-        <button type="button" className="btn btn-ghost protocol-toggle" aria-expanded={!collapsed} onClick={onToggle}>
-          {collapsed ? '◀ MCP' : 'MCP protocol ▶'}
-        </button>
-        {!collapsed && (
-          <>
-            <span className="protocol-sub">
-              {profileName}'s session · {entries.length} messages
-            </span>
-            <button type="button" className="btn btn-ghost" onClick={onClear} aria-label="Clear the protocol view">
-              Clear
-            </button>
-          </>
-        )}
-      </header>
-      {!collapsed && (
-        <>
-          <p className="protocol-legend">
-            <span>→ simulator to CareCircle server</span>
-            <span>← server to simulator</span>
-            <span>JSON-RPC 2.0 · MCP 2025-11-25 · Streamable HTTP</span>
+    <aside className="hood" aria-label="Under the hood: MCP protocol log">
+      <header className="hood-head">
+        <div className="hood-title">
+          <h2>Under the hood</h2>
+          <p className="hood-chip">
+            MCP {protocol ?? '2025-11-25'} · Streamable HTTP · {profileName}’s session
           </p>
-          <ol
-            className="rpc-list"
-            ref={list}
-            onScroll={ev => {
-              const el = ev.currentTarget;
-              stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-            }}
-          >
-            {entries.length === 0 && <li className="rpc-empty">No traffic yet. Say something to open the MCP session.</li>}
-            {entries.map(e => (
-              <Row key={e.seq} e={e} />
-            ))}
-          </ol>
-        </>
-      )}
+        </div>
+        <button type="button" className="icon-btn" onClick={onClear} aria-label="Clear the protocol view" title="Clear">
+          <Trash2 aria-hidden="true" />
+        </button>
+        <button type="button" className="icon-btn" aria-expanded={true} onClick={onToggle} aria-label="Hide under the hood" title="Hide">
+          <PanelRightClose aria-hidden="true" />
+        </button>
+      </header>
+      <p className="hood-legend">
+        <span className="lg lg-request">request</span>
+        <span className="lg lg-response">response</span>
+        <span className="lg lg-notification">notification</span>
+        <span className="lg lg-elicitation">elicitation</span>
+        <span className="lg lg-info">info</span>
+      </p>
+      <ol
+        className="rpc-groups"
+        ref={list}
+        onScroll={ev => {
+          const el = ev.currentTarget;
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        }}
+      >
+        {groups.length === 0 && <li className="rpc-empty">No traffic yet. Say something to open the MCP session.</li>}
+        {groups.map(g => {
+          const open = toggled[g.key] ?? g.key === newest;
+          return <GroupView key={g.key} g={g} open={open} onToggle={() => setToggled(t => ({ ...t, [g.key]: !open }))} />;
+        })}
+      </ol>
     </aside>
   );
 }
