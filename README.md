@@ -57,7 +57,9 @@ npm test
 
 The real Alexa+ add-on tools are partner-only ([friction log FL-01](docs/friction-log.md)), so CareCircle ships its own simulator that plays the Alexa+ role. It listens, reasons with a Strands agent on Amazon Bedrock, calls the CareCircle server as a standard MCP client, speaks with Amazon Polly, and shows cards. A live protocol panel shows every JSON-RPC message.
 
-![Sam reorders Amlodipine: the form elicitation, then the secure checkout, with the MCP traffic on the right](docs/screenshots/sim-checkout-complete.png)
+![The idle home screen on a Show 8: the frozen demo clock, the doses due, the visit and today's doses](docs/screenshots/sim-home.png)
+
+![Sam reorders Amlodipine: the confirmation, the secure checkout and the order on its way, with the MCP traffic grouped per turn on the right](docs/screenshots/sim-checkout-complete.png)
 
 ```text
 browser (React, :5173) ──/api──▶ orchestrator (FastAPI + Strands, :8100) ──MCP Streamable HTTP──▶ CareCircle server (:8000)
