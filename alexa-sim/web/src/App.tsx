@@ -327,10 +327,25 @@ export function App() {
     }
   }, []);
 
-  // Keep the newest exchange in view on each device screen.
+  // Keep the newest exchange in view on each device screen: the bottom, unless that would push the
+  // start of the newest reply off the top. Then the reply's first line sits at the top and the card
+  // below it is a scroll away.
+  const scrollKey = JSON.stringify([
+    layout,
+    panes,
+    shown.map(x => profiles[x.profile].turns.map(t => [t.id, t.items.length, !!t.speech, t.pending])),
+    shown.map(x => [interims[x.profile], notices[x.profile].length])
+  ]);
   useEffect(() => {
-    for (const el of Object.values(screenBodies.current)) if (el) el.scrollTop = el.scrollHeight;
-  }, [profiles, elicit, interims, notices, panes, layout]);
+    for (const el of Object.values(screenBodies.current)) {
+      if (!el) continue;
+      const bottom = el.scrollHeight - el.clientHeight;
+      const lead = el.querySelector<HTMLElement>('.turn-now .said-alexa') ?? el.querySelector<HTMLElement>('.turn-now');
+      // Measured on screen, not with offsetTop, which Large text's CSS zoom throws off.
+      const leadTop = lead ? el.scrollTop + lead.getBoundingClientRect().top - el.getBoundingClientRect().top : Infinity;
+      el.scrollTop = Math.min(bottom, leadTop - 48);
+    }
+  }, [scrollKey, elicit]);
 
   const current = profiles[panelProfile];
   const visibleRpc = useMemo(() => current.rpc.filter(e => e.seq > current.clearedAt), [current.rpc, current.clearedAt]);
@@ -347,7 +362,9 @@ export function App() {
     <ElicitationCard key={e.id} e={e} state={elicit[e.id] ?? 'open'} onAnswer={(a, c) => answer(e, a, c)} onDismiss={() => setElicit(s => ({ ...s, [e.id]: 'complete' }))} />
   );
 
-  const renderItem = (p: ProfileId, t: Turn, it: Item, i: number) => {
+  /** The phone shows MCP App views; the Show devices keep to native cards, sized for across the room. */
+  const renderItem = (pane: Pane, t: Turn, it: Item, i: number) => {
+    const p = pane.profile;
     if (it.kind === 'call')
       return t.pending && !t.items.some(x => x.kind === 'result' && x.result.id === it.call.id) ? (
         <p key={i} className="invoking" role="status">
@@ -356,7 +373,7 @@ export function App() {
       ) : null;
     if (it.kind === 'result') {
       const key = `${t.id}:${String(it.result.id)}`;
-      if (it.result.uiResourceUri && !it.result.isError && health?.sandboxUrl && !appFailed[key]) {
+      if (pane.device === 'phone' && it.result.uiResourceUri && !it.result.isError && health?.sandboxUrl && !appFailed[key]) {
         const call = t.items.find((x): x is Extract<Item, { kind: 'call' }> => x.kind === 'call' && x.call.id === it.result.id);
         return (
           <AppView
@@ -481,7 +498,7 @@ export function App() {
             lang={lang}
             live={live[p]}
             connected={!!health?.mcp.reachable}
-            renderItem={(t, it, i) => renderItem(p, t, it, i)}
+            renderItem={(t, it, i) => renderItem(pane, t, it, i)}
             companionQuestions={companionQuestions}
             onDismissNotice={id => dismissNotice(p, id)}
             bodyRef={el => {

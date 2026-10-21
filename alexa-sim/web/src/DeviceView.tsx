@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import { BellRing, MessageSquareText, TriangleAlert, X } from 'lucide-react';
 import type { Elicitation, Language, Today } from './api';
+import { Avatar, HomeScreen, timeOf, useFamilyClock } from './HomeScreen';
 import { isHindi, nameOf, SUGGESTIONS, type Item, type Notice, type Pane, type Prefs, type Ring, type Turn } from './model';
 
 export interface DeviceViewProps {
@@ -21,34 +23,90 @@ export interface DeviceViewProps {
   bodyRef: (el: HTMLDivElement | null) => void;
 }
 
+const NOTICE_ICON = { alert: TriangleAlert, reminder: BellRing, message: MessageSquareText };
+
 function Notices({ notices, onDismiss }: { notices: Notice[]; onDismiss: (id: string) => void }) {
   if (!notices.length) return null;
   return (
     <div className="notices" role="region" aria-label="Notifications">
-      {notices.map(n => (
-        <div key={n.id} className={`notice notice-${n.kind}`} role={n.kind === 'alert' ? 'alert' : 'status'}>
-          <div className="notice-head">
-            <strong>{n.kind === 'message' ? `Message · ${n.title}` : n.title}</strong>
-            <button type="button" className="btn btn-ghost notice-close" onClick={() => onDismiss(n.id)} aria-label="Dismiss">
-              ✕
+      {notices.map(n => {
+        const Icon = NOTICE_ICON[n.kind];
+        return (
+          <div key={n.id} className={`notice notice-${n.kind}`} role={n.kind === 'alert' ? 'alert' : 'status'}>
+            <Icon className="notice-icon" aria-hidden="true" />
+            <div className="notice-content">
+              <strong className="notice-title">{n.kind === 'message' ? `Message · ${n.title}` : n.title}</strong>
+              <p className={n.kind === 'message' ? 'notice-text notice-pre' : 'notice-text'} lang={isHindi(n.text) ? 'hi' : undefined}>
+                {n.kind === 'message' ? n.text.split('\n').slice(2).join('\n') : n.text}
+              </p>
+            </div>
+            <button type="button" className="icon-btn notice-close" onClick={() => onDismiss(n.id)} aria-label="Dismiss">
+              <X aria-hidden="true" />
             </button>
           </div>
-          <p className={n.kind === 'message' ? 'notice-text notice-pre' : 'notice-text'} lang={isHindi(n.text) ? 'hi' : undefined}>
-            {n.kind === 'message' ? n.text.split('\n').slice(2).join('\n') : n.text}
-          </p>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
+/** The device's own status line: time, who is using it and whose CareCircle it is. */
+function Strip({ pane, live, lang, connected }: { pane: Pane; live: Today | null; lang: Language; connected: boolean }) {
+  const now = useFamilyClock(live);
+  const recipient: string = live?.status?.recipient?.name ?? 'Rose';
+  return (
+    <header className="strip">
+      <span className="strip-time">{timeOf(now, lang)}</span>
+      <span className="strip-family">
+        <Avatar profile={pane.profile} size="sm" />
+        <span>
+          {recipient}’s CareCircle
+          <span className="sr-only">, {nameOf(pane.profile)} is using this device</span>
+        </span>
+      </span>
+      <span className={`strip-link ${connected ? 'strip-link-on' : ''}`} title={connected ? 'Connected to CareCircle' : 'Offline'}>
+        <span className="sr-only">{connected ? 'Connected' : 'Offline'}</span>
+      </span>
+    </header>
+  );
+}
+
+function TurnView({ t, now, who, renderItem }: { t: Turn; now: boolean; who: string; renderItem: DeviceViewProps['renderItem'] }) {
+  const calls = t.items.map((it, i) => (it.kind === 'call' ? renderItem(t, it, i) : null));
+  const cards = t.items.map((it, i) => (it.kind === 'call' ? null : renderItem(t, it, i)));
+  return (
+    <article className={`turn ${now ? 'turn-now' : 'turn-past'}`} aria-busy={t.pending}>
+      <p className="said-user">
+        <span className="sr-only">{who} said: </span>“{t.user}”
+      </p>
+      {calls}
+      {t.pending && !t.speech && !t.items.length && (
+        <p className="invoking" role="status">
+          Thinking…
+        </p>
+      )}
+      {t.speech && (
+        <p className="said-alexa" lang={t.speech.lang === 'hi' ? 'hi' : undefined}>
+          {t.speech.text}
+        </p>
+      )}
+      <div className="turn-cards">{cards}</div>
+      {t.error && (
+        <p className="turn-error" role="alert">
+          {t.error}
+        </p>
+      )}
+    </article>
+  );
+}
+
 export function DeviceView(props: DeviceViewProps) {
-  const { pane, turns, ring, interim, notices, prefs, lang, connected, renderItem, companionQuestions, onDismissNotice, bodyRef } = props;
+  const { pane, turns, ring, interim, notices, prefs, lang, live, connected, renderItem, companionQuestions, onDismissNotice, bodyRef } = props;
   const p = pane.profile;
-  const ringEl = <div className={`ring ring-${ring}`} aria-hidden="true" />;
   const lastTurn = turns.at(-1);
 
   if (pane.device === 'dot') {
+    const ringEl = <div className={`ring ring-${ring}`} aria-hidden="true" />;
     const notice = notices.at(-1);
     return (
       <div className="dot-wrap">
@@ -79,49 +137,44 @@ export function DeviceView(props: DeviceViewProps) {
     );
   }
 
-  const suggestion = SUGGESTIONS[p][lang][0];
-  return (
-    <div className={`frame frame-${pane.device}`}>
-      <div className={`screen${prefs.large ? ' screen-large' : ''}`}>
-        <header className="screen-bar">
-          <span>{pane.device === 'phone' ? `CareCircle · ${nameOf(p)}` : nameOf(p)}</span>
-          <span className="screen-time">{connected ? 'Connected' : 'Offline'}</span>
-        </header>
-        <div className="screen-body" aria-live="polite" ref={bodyRef}>
-          {turns.length === 0 && !notices.length && (
-            <div className="screen-idle">
-              <p className="idle-hello">{lang === 'hi' ? `नमस्ते ${nameOf(p)}` : `Hi ${nameOf(p)}`}</p>
-              <p className="muted">Try “{suggestion}”</p>
-            </div>
-          )}
+  const idle = turns.length === 0 && !notices.length && !interim;
+  const kind = pane.device === 'phone' ? 'phone' : 'show';
+  const screen = (
+    <div className={`screen${prefs.large ? ' screen-large' : ''}`}>
+      <Strip pane={pane} live={live} lang={lang} connected={connected} />
+      {idle ? (
+        <HomeScreen profile={p} live={live} lang={lang} suggestion={SUGGESTIONS[p][lang][0]} />
+      ) : (
+        <div className="convo" aria-live="polite" ref={bodyRef}>
           {turns.map(t => (
-            <article key={t.id} className="turn" aria-busy={t.pending}>
-              <p className="said-user">
-                <span className="sr-only">{nameOf(p)} said: </span>“{t.user}”
-              </p>
-              {t.items.map((it, i) => renderItem(t, it, i))}
-              {t.speech && (
-                <p className="said-alexa" lang={t.speech.lang === 'hi' ? 'hi' : undefined}>
-                  {t.speech.text}
-                </p>
-              )}
-              {t.pending && !t.speech && !t.items.length && (
-                <p className="invoking" role="status">
-                  Thinking…
-                </p>
-              )}
-              {t.error && (
-                <p className="turn-error" role="alert">
-                  {t.error}
-                </p>
-              )}
-            </article>
+            <TurnView key={t.id} t={t} now={t === lastTurn && !interim} who={nameOf(p)} renderItem={renderItem} />
           ))}
-          {interim && <p className="said-user said-interim">“{interim}”</p>}
+          {interim && (
+            <article className="turn turn-now">
+              <p className="said-user said-interim">“{interim}”</p>
+            </article>
+          )}
           <Notices notices={notices} onDismiss={onDismissNotice} />
         </div>
-        {ringEl}
+      )}
+    </div>
+  );
+
+  if (kind === 'phone') {
+    return (
+      <div className={`phone ring-${ring}`}>
+        <span className="phone-notch" aria-hidden="true" />
+        {screen}
       </div>
+    );
+  }
+  return (
+    <div className={`show ${pane.device}`}>
+      <div className="show-bezel">
+        <span className={`lightbar ring-${ring}`} aria-hidden="true" />
+        {screen}
+      </div>
+      {pane.device === 'show8' && <span className="show-base" aria-hidden="true" />}
     </div>
   );
 }
