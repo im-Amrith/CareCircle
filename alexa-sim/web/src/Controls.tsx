@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Check, Ellipsis, Inbox, Mic, MicOff, Send } from 'lucide-react';
 import type { Language, ProfileId } from './api';
 import { Avatar } from './HomeScreen';
-import { DEVICES, isHindi, nameOf, PROFILES, SUGGESTIONS, type Device, type Item, type Prefs, type Ring, type Turn } from './model';
+import { DEVICES, isHindi, nameOf, PROFILES, SUGGESTIONS, type Device, type Item, type Layout, type Prefs, type Ring, type Turn } from './model';
 
 /* ---------- who is talking ---------- */
 
@@ -60,7 +60,7 @@ export function suggestionsFor(p: ProfileId, lang: Language, turns: Turn[]): str
   }
   const said = new Set(turns.map(t => t.user.toLowerCase()));
   const rest = base.filter(s => !lead.includes(s) && !said.has(s.toLowerCase()));
-  return [...lead, ...rest].slice(0, 4);
+  return [...lead, ...rest].slice(0, 3);
 }
 
 /* ---------- the control bar under a device ---------- */
@@ -79,6 +79,8 @@ interface BarProps {
   suggestions: string[];
   device: Device;
   onDevice: (d: Device) => void;
+  layout: Layout;
+  onLayout: (l: Layout) => void;
   muted: boolean;
   onMute: () => void;
   onReset: () => void;
@@ -147,7 +149,7 @@ export function ControlBar(props: BarProps) {
 
 /* ---------- the "…" menu ---------- */
 
-function MoreMenu({ profile, lang, busy, device, onDevice, muted, onMute, onReset, onLanguage, prefs, onPrefs, onRemind, remindHint, inboxCount, onInbox }: BarProps) {
+function MoreMenu({ profile, lang, busy, device, onDevice, layout, onLayout, muted, onMute, onReset, onLanguage, prefs, onPrefs, onRemind, remindHint, inboxCount, onInbox }: BarProps) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -189,6 +191,15 @@ function MoreMenu({ profile, lang, busy, device, onDevice, muted, onMute, onRese
                 {d.label}
               </button>
             ))}
+          </div>
+          <p className="menu-label">View</p>
+          <div className="menu-seg" role="radiogroup" aria-label="View">
+            <button type="button" role="radio" aria-checked={layout === 'single'} onClick={() => onLayout('single')}>
+              One device
+            </button>
+            <button type="button" role="radio" aria-checked={layout === 'family'} title="Two family members side by side, updating live" onClick={() => onLayout('family')}>
+              Family view
+            </button>
           </div>
           <p className="menu-label">Language</p>
           <div className="menu-seg" role="radiogroup" aria-label="Language">

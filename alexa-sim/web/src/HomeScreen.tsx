@@ -30,8 +30,6 @@ export const timeOf = (d: Date, lang: Language = 'en') =>
 const dateOf = (d: Date, lang: Language) =>
   d.toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: FAMILY_TZ });
 
-const hourOf = (d: Date) => Number(d.toLocaleTimeString('en-GB', { hour: '2-digit', hour12: false, timeZone: FAMILY_TZ }));
-
 /* ---------- avatars ---------- */
 
 export function Avatar({ profile, size = 'md' }: { profile: ProfileId; size?: 'sm' | 'md' | 'lg' }) {
@@ -44,7 +42,8 @@ export function Avatar({ profile, size = 'md' }: { profile: ProfileId; size?: 's
 
 /* ---------- today's doses as a ring ---------- */
 
-export function DoseRing({ taken, total, label }: { taken: number; total: number; label?: string }) {
+/** Today's doses as a ring; `bare` leaves the numbers to the text beside it. */
+export function DoseRing({ taken, total, label, bare }: { taken: number; total: number; label?: string; bare?: boolean }) {
   const r = 42;
   const c = 2 * Math.PI * r;
   const share = total ? taken / total : 0;
@@ -54,80 +53,77 @@ export function DoseRing({ taken, total, label }: { taken: number; total: number
         <circle className="dose-ring-track" cx="50" cy="50" r={r} />
         {share > 0 && <circle className="dose-ring-fill" cx="50" cy="50" r={r} strokeDasharray={`${share * c} ${c}`} transform="rotate(-90 50 50)" />}
       </svg>
-      <figcaption>
+      {!bare && <figcaption>
         <span className="dose-ring-num">
           {taken}
           <span className="dose-ring-of"> of {total}</span>
         </span>
         <span className="dose-ring-label">{label ?? 'doses today'}</span>
-      </figcaption>
+      </figcaption>}
     </figure>
   );
 }
 
-/* ---------- the ambient home screen ---------- */
+/* ---------- the ambient home screen, like StandBy ---------- */
+
+/** "9:00" and "am" apart, so the digits can be huge and the suffix quiet. */
+function clockParts(d: Date, lang: Language) {
+  const parts = new Intl.DateTimeFormat(lang === 'hi' ? 'hi-IN' : 'en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: FAMILY_TZ }).formatToParts(d);
+  const digits = parts.filter(p => p.type === 'hour' || p.type === 'minute' || p.type === 'literal').map(p => p.value).join('').trim();
+  const suffix = parts.find(p => p.type === 'dayPeriod')?.value ?? '';
+  return { digits, suffix };
+}
 
 interface Props {
   profile: ProfileId;
   live: Today | null;
   lang: Language;
-  suggestion: string;
 }
 
-export function HomeScreen({ profile, live, lang, suggestion }: Props) {
+export function HomeScreen({ live, lang }: Props) {
   const now = useFamilyClock(live);
   const s = live?.status;
-  const hi = lang === 'hi';
-  const hour = hourOf(now);
-  const greeting = hi ? 'नमस्ते' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const recipient: string = s?.recipient?.name ?? 'Rose';
-  const isRecipient = live?.viewer.role === 'recipient';
+  const { digits, suffix } = clockParts(now, lang);
   const due: any[] = (s?.doses ?? []).filter((d: any) => d.status === 'due');
+  const next = due.length ? { label: 'Due now', name: due.map(d => d.name).join(', '), time: clock(due[0].time) } : s?.nextDose ? { label: 'Next dose', name: s.nextDose.name, time: clock(s.nextDose.time) } : null;
   const visit = (s?.visits ?? [])[0];
 
   return (
     <div className="home">
-      <div className="home-main">
-        <p className="home-greeting">
-          {greeting}, {nameOf(profile)}
+      <div className="home-time">
+        <p className="home-clock">
+          {digits}
+          <span className="home-clock-suffix">{suffix}</span>
         </p>
-        <p className="home-clock">{timeOf(now, lang)}</p>
         <p className="home-date">{dateOf(now, lang)}</p>
-        <p className="home-hint">
-          {hi ? 'बोलकर देखें' : 'Try saying'} “{suggestion}”
-        </p>
       </div>
       {s && (
-        <div className="home-side">
-          <DoseRing taken={s.counts?.taken ?? 0} total={s.counts?.total ?? 0} label={isRecipient ? 'doses today' : `${recipient}'s doses`} />
-          <ul className="home-tiles">
-            {due.length > 0 ? (
-              <li className="home-tile home-tile-due">
-                <Pill aria-hidden="true" />
-                <span>
-                  <strong>Due now</strong> {due.map(d => d.name).join(', ')}
-                </span>
-              </li>
-            ) : (
-              s.nextDose && (
-                <li className="home-tile">
-                  <Pill aria-hidden="true" />
-                  <span>
-                    <strong>Next</strong> {s.nextDose.name} at {clock(s.nextDose.time)}
-                  </span>
-                </li>
-              )
-            )}
-            {visit && (
-              <li className="home-tile">
-                <CalendarHeart aria-hidden="true" />
-                <span>
-                  <strong>{visit.who}</strong> visits at {clock(visit.time)}
-                </span>
-              </li>
-            )}
-          </ul>
-        </div>
+        <ul className="widgets" aria-label="Today">
+          <li className={`widget${due.length ? ' widget-due' : ''}`}>
+            <p className="widget-label">
+              <Pill aria-hidden="true" /> {next?.label ?? 'Next dose'}
+            </p>
+            <p className="widget-value">{next?.name ?? 'All done'}</p>
+            <p className="widget-meta">{next?.time ?? 'for today'}</p>
+          </li>
+          <li className="widget">
+            <p className="widget-label">
+              <CalendarHeart aria-hidden="true" /> Visit
+            </p>
+            <p className="widget-value">{visit ? visit.who : 'None today'}</p>
+            <p className="widget-meta">{visit ? clock(visit.time) : ' '}</p>
+          </li>
+          <li className="widget widget-ring">
+            <DoseRing taken={s.counts?.taken ?? 0} total={s.counts?.total ?? 0} bare />
+            <div>
+              <p className="widget-label">Today</p>
+              <p className="widget-value">
+                {s.counts?.taken ?? 0} of {s.counts?.total ?? 0}
+              </p>
+              <p className="widget-meta">doses taken</p>
+            </div>
+          </li>
+        </ul>
       )}
     </div>
   );
