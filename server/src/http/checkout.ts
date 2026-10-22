@@ -144,7 +144,7 @@ export function checkoutRouter(deps: Deps): Router {
 }
 
 /** A POST must come from a page on this same host. Browsers always send Origin on form posts. */
-function sameOrigin(req: Request): boolean {
+export function sameOrigin(req: Request): boolean {
   const origin = req.header('origin');
   if (origin) {
     try {
@@ -157,11 +157,11 @@ function sameOrigin(req: Request): boolean {
   return site === undefined || site === 'same-origin';
 }
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-function page(res: Response, status: number, title: string, body: string) {
+export function page(res: Response, status: number, title: string, body: string) {
   const nonce = randomBytes(16).toString('base64');
   res
     .status(status)

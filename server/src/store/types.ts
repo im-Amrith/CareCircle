@@ -180,6 +180,25 @@ export interface FamilyMessage {
   delivery: { inbox: true; sns: 'sent' | 'failed' | 'off'; snsMessageId?: string; snsError?: string };
 }
 
+/** How sure the device is about who is speaking. Simulated in dev; a real voice profile would set it. */
+export type SpeakerConfidence = 'high' | 'low' | 'unknown';
+
+/** A change someone asked for by voice that CareCircle didn't make because it couldn't tell who was speaking. */
+export interface VoiceCheck {
+  id: string;
+  familyId: string;
+  at: string;
+  /** Family-local YYYY-MM-DD and HH:MM */
+  date: string;
+  time: string;
+  /** Member id of the device's profile the request came in on */
+  device: string;
+  confidence: Exclude<SpeakerConfidence, 'high'>;
+  tool: string;
+  /** What was asked, e.g. "log Rose's 8 am Metformin" */
+  attempted: string;
+}
+
 export interface CareStore {
   getMember(userId: string): Promise<Member | undefined>;
   setMemberLanguage(userId: string, language: Language): Promise<Member>;
@@ -214,6 +233,9 @@ export interface CareStore {
   setPreference(preference: CarePreference): Promise<void>;
   /** Returns whether there was one to remove */
   removePreference(familyId: string, key: PreferenceKey): Promise<boolean>;
+  /** Inclusive date range, family-local YYYY-MM-DD */
+  listVoiceChecks(familyId: string, fromDate: string, toDate: string): Promise<VoiceCheck[]>;
+  addVoiceCheck(check: VoiceCheck): Promise<void>;
   addMessage(message: FamilyMessage): Promise<void>;
   /** Newest first */
   listMessages(familyId: string, limit?: number): Promise<FamilyMessage[]>;

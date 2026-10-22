@@ -60,6 +60,9 @@ export interface Elicitation {
 
 export type Language = 'en' | 'hi';
 
+/** The simulated voice match a request carries: how sure the device is about who is speaking. */
+export type VoiceMatch = 'high' | 'low' | 'unknown';
+
 export interface Speech {
   text: string;
   audio?: string;
@@ -79,6 +82,8 @@ export interface Today {
   status: Record<string, any>;
   speech: string;
   alerts: { id: string; time: string; note: string; reasons: string[]; loggedBy: string; text: string }[];
+  /** Changes refused today because the voice wasn't recognised (the care log). */
+  voiceChecks?: { id: string; time: string; device: string; attempted: string; text: string }[];
   reminder: { key: string; slot: string; time: string; medicationIds: string[]; text: string } | null;
   updatedAt: string;
 }
@@ -137,12 +142,17 @@ async function errorText(res: Response): Promise<string> {
 }
 
 /** POST /turn and feed each SSE event to `onEvent` until the stream ends. */
-export async function streamTurn(profile: ProfileId, text: string, onEvent: (e: TurnEvent) => void, opts: { slow?: boolean; signal?: AbortSignal } = {}) {
-  const { slow = false, signal } = opts;
+export async function streamTurn(
+  profile: ProfileId,
+  text: string,
+  onEvent: (e: TurnEvent) => void,
+  opts: { slow?: boolean; voice?: VoiceMatch; signal?: AbortSignal } = {}
+) {
+  const { slow = false, voice = 'high', signal } = opts;
   const res = await fetch('/api/turn', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ profile, text, slow }),
+    body: JSON.stringify({ profile, text, slow, voice }),
     signal
   });
   if (!res.ok || !res.body) throw new Error(await errorText(res));

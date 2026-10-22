@@ -16,7 +16,8 @@ import {
   type ProfileId,
   type RpcEntry,
   type Today,
-  type TurnEvent
+  type TurnEvent,
+  type VoiceMatch
 } from './api';
 import { AppView } from './AppView';
 import { Backdrop } from './fx/Backdrop';
@@ -96,6 +97,11 @@ export function App() {
   mutedRef.current = muted;
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
+  // Simulated voice match: what the next request on each device carries, and what the last one did.
+  const [voices, setVoices] = useState<Record<ProfileId, VoiceMatch>>({ rose: 'high', sam: 'high', maya: 'high' });
+  const [heard, setHeard] = useState<Record<ProfileId, VoiceMatch>>({ rose: 'high', sam: 'high', maya: 'high' });
+  const voicesRef = useRef(voices);
+  voicesRef.current = voices;
 
   const shown = layout === 'single' ? panes.slice(0, 1) : panes;
   const visible = useMemo(() => [...new Set(shown.map(p => p.profile))], [shown]);
@@ -215,6 +221,10 @@ export function App() {
       let spoke: Promise<void> | null = null;
       const asked: string[] = [];
       const slow = prefsRef.current[p].slow;
+      // The voice match applies to this one request, then the device is back to matched.
+      const voice = voicesRef.current[p];
+      setHeard(h => ({ ...h, [p]: voice }));
+      setVoices(v => ({ ...v, [p]: 'high' }));
 
       const onEvent = (ev: TurnEvent) => {
         switch (ev.type) {
@@ -253,7 +263,7 @@ export function App() {
       };
 
       try {
-        await streamTurn(p, text, onEvent, { slow });
+        await streamTurn(p, text, onEvent, { slow, voice });
       } catch (err) {
         updateTurn(p, id, t => ({ ...t, error: (err as Error).message }));
       } finally {
@@ -436,6 +446,7 @@ export function App() {
               <span key={x.id} className={`glow-${x.id}${x.id === p ? ' glow-on' : ''}`} />
             ))}
           </div>
+          <VoiceBadge profile={p} match={voices[p] !== 'high' ? voices[p] : heard[p]} pending={voices[p] !== 'high'} />
           <DeviceView
             pane={pane}
             turns={profiles[p].turns}
@@ -478,6 +489,8 @@ export function App() {
           onRemind={isRecipient ? () => void remind(p) : undefined}
           remindHint={`Reminders also come by themselves after ${health?.reminders?.idleSeconds ?? 45} seconds of quiet`}
           inboxCount={inbox[p].length}
+          voice={voices[p]}
+          onVoice={v => setVoices(all => ({ ...all, [p]: v }))}
           onInbox={() => {
             const m = inbox[p][0];
             pushNotice(p, { id: m.id, kind: 'message', title: m.title, text: m.text });
@@ -521,5 +534,23 @@ export function App() {
         />
       </div>
     </div>
+  );
+}
+
+/** "Sam · voice matched", or "Not sure who's speaking". The match is simulated; the server enforces what it allows. */
+function VoiceBadge({ profile, match, pending }: { profile: ProfileId; match: VoiceMatch; pending: boolean }) {
+  const sure = match === 'high';
+  const hint =
+    match === 'low'
+      ? 'Unsure who is speaking: CareCircle asks before changing anything'
+      : match === 'unknown'
+        ? 'Voice not recognised: CareCircle answers questions but makes no changes'
+        : 'The voice matches this profile';
+  return (
+    <p className={`voice-badge voice-${match}`} role="status" title={pending ? `${hint} (next request)` : hint}>
+      <span className="voice-dot" aria-hidden="true" />
+      {sure ? `${nameOf(profile)} · voice matched` : "Not sure who's speaking"}
+      {pending && <span className="voice-next">next request</span>}
+    </p>
   );
 }

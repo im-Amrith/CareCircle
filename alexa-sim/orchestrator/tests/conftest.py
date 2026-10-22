@@ -110,10 +110,11 @@ def sim(mcp_server: str, sim_port: int) -> Iterator[str]:
 Answer = Callable[[dict[str, Any]], dict[str, Any]]
 
 
-def turn(sim: str, profile: str, text: str, answer: Answer | None = None) -> list[tuple[str, dict[str, Any]]]:
-    """Runs one /turn, answering elicitations with `answer`, and returns every SSE event."""
+def turn(sim: str, profile: str, text: str, answer: Answer | None = None, voice: str = "high") -> list[tuple[str, dict[str, Any]]]:
+    """Runs one /turn with a simulated voice match, answering elicitations with `answer`, and returns every SSE event."""
     events: list[tuple[str, dict[str, Any]]] = []
-    with httpx.Client(timeout=30) as client, client.stream("POST", f"{sim}/turn", json={"profile": profile, "text": text}) as resp:
+    body = {"profile": profile, "text": text, "voice": voice}
+    with httpx.Client(timeout=30) as client, client.stream("POST", f"{sim}/turn", json=body) as resp:
         assert resp.status_code == 200, resp.read()
         kind = None
         for line in resp.iter_lines():

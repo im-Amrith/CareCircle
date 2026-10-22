@@ -5,6 +5,7 @@ import type { Notifier } from '../notify/notifier.js';
 import type { Clock } from '../config.js';
 import type { AppointmentPlanner } from '../domain/appointments.js';
 import type { TaskRegistry } from './tasks.js';
+import type { PendingVoiceCheck } from './identity.js';
 import { localParts, type LocalParts } from '../domain/time.js';
 import { voiceSafe } from '../domain/speech.js';
 
@@ -30,6 +31,10 @@ export interface Deps {
   tasks?: TaskRegistry;
   /** Family id -> appointment options last read out to a voice-only client, for its "yes". */
   issuedAppointmentOptions?: Map<string, { at: number; ids: Set<string> }>;
+  /** Token hash -> a phone confirmation of who was speaking, waiting on /voice-check. */
+  voiceChecks?: Map<string, PendingVoiceCheck>;
+  /** How long a low-confidence change waits for that phone confirmation. Default 5 minutes. */
+  voiceCheckTimeoutMs?: number;
 }
 
 export interface Caller {

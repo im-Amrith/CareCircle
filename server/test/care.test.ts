@@ -88,6 +88,7 @@ describe('spoken medicine names', () => {
 
   it('treats "my pills" as generic', () => {
     expect(isGenericPhrase('my morning pills')).toBe(true);
+    expect(isGenericPhrase('her morning pills')).toBe(true);
     expect(isGenericPhrase('the vitamin')).toBe(false);
   });
 });

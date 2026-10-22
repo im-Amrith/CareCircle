@@ -9,6 +9,7 @@ import { createCareCircleServer, SERVER_NAME, SERVER_VERSION } from '../mcp/serv
 import { devAuth, userOf } from './auth.js';
 import { MemoryEventStore } from './event-store.js';
 import { checkoutRouter } from './checkout.js';
+import { voiceCheckRouter } from './voice-check.js';
 import { ChangeHub, watchStore } from '../store/changes.js';
 import { createNotifier, snsPublisher } from '../notify/notifier.js';
 import { runDigestSchedule } from '../notify/digest.js';
@@ -44,6 +45,7 @@ export function createHttpApp(config: Config, baseDeps: Deps) {
     notifier: baseDeps.notifier ?? createNotifier(store, config.snsTopicArn ? snsPublisher(config.snsTopicArn, config.awsRegion) : undefined),
     publicUrl: baseDeps.publicUrl ?? config.publicUrl,
     checkoutWatchers: baseDeps.checkoutWatchers ?? new Map(),
+    voiceChecks: baseDeps.voiceChecks ?? new Map(),
     // Appointment planning by the orchestrator's Strands care team when configured; locally otherwise.
     appointmentPlanner: baseDeps.appointmentPlanner ?? (config.plannerUrl ? new RemotePlanner(mockAppointmentServices(), config.plannerUrl) : undefined)
   };
@@ -67,6 +69,8 @@ export function createHttpApp(config: Config, baseDeps: Deps) {
 
   // Refill checkout pages. Not behind dev auth: the one-time link is the credential.
   app.use(checkoutRouter(deps));
+  // "Was this you?" phone confirmations for unsure voice matches. Same model: the one-time link is the credential.
+  app.use(voiceCheckRouter(deps));
 
   app.use('/mcp', devAuth(config));
 

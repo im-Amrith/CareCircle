@@ -13,6 +13,7 @@ import type {
   Pharmacy,
   RefillOrder,
   Visit,
+  VoiceCheck,
   WellbeingNote
 } from './types.js';
 
@@ -29,6 +30,7 @@ export class MemoryStore implements CareStore {
   orders: RefillOrder[] = [];
   messages: FamilyMessage[] = [];
   preferences: CarePreference[] = [];
+  voiceChecks: VoiceCheck[] = [];
 
   async getMember(userId: string) {
     return this.members.get(userId);
@@ -143,6 +145,14 @@ export class MemoryStore implements CareStore {
     const before = this.preferences.length;
     this.preferences = this.preferences.filter(p => !(p.familyId === familyId && p.key === key));
     return this.preferences.length < before;
+  }
+
+  async listVoiceChecks(familyId: string, fromDate: string, toDate: string) {
+    return this.voiceChecks.filter(c => c.familyId === familyId && c.date >= fromDate && c.date <= toDate);
+  }
+
+  async addVoiceCheck(check: VoiceCheck) {
+    this.voiceChecks.push(check);
   }
 
   async addMessage(message: FamilyMessage) {

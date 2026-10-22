@@ -360,6 +360,64 @@ happens, not reconstructed at the end.
 - **Suggestion:** Ship a scripted-response model or agent for tests, and document the
   `AgentBase` node contract (events, `AgentResult`, `invocation_state`) in the multi-agent docs.
 
+## FL-16: No way to put a policy in front of every MCP tool call
+
+- **Date:** 2026-10-22
+- **Area:** MCP TypeScript SDK 2.3.1 (`@modelcontextprotocol/server`)
+- **Task attempted:** Enforce "who's speaking?" rules for every tool in one place: reads always
+  run, changes are asked about or refused depending on the speaker match.
+- **Steps taken:** Looked for request middleware, a `tools/call` hook or a per-tool
+  authorization callback on `McpServer`.
+- **Expected:** A supported hook that runs before any tool handler, sees the request context and
+  can return a result or run the handler as a different principal.
+- **Actual:** Nothing public. `McpServer` registers its own `tools/call` handler (argument
+  parsing, output validation, task routing). `server.setRequestHandler('tools/call', …)` would
+  replace it outright, and there is no public way to get it back to call after the check. The
+  only option is wrapping the stored handler in the private `server._requestHandlers` map (as for
+  Tasks, FL-13). The order matters: the gate must be installed after the task wrapper, or
+  task-augmented calls skip it.
+- **Severity:** Major
+- **Workaround:** `installSpeakerGate` in `server/src/mcp/identity.ts` wraps the stored handler
+  last. A test fails if any listed tool isn't classified as read or change, and unclassified
+  tools are treated as changes.
+- **Suggestion:** Add `McpServer.use((request, ctx, next) => ...)` middleware for requests, or
+  a `beforeToolCall` hook, so policy doesn't depend on private fields.
+
+## FL-17: A policy refusal has to be an error, because clients validate every other result against the tool's output schema
+
+- **Date:** 2026-10-22
+- **Area:** MCP Python SDK client (used by Strands `MCPClient`); MCP spec 2025-11-25, `outputSchema`
+- **Task attempted:** Return "Sorry, I don't recognise this voice" for any change tool, with a
+  structured reason a UI could show.
+- **Steps taken:** Read `ClientSession.call_tool` and `_validate_tool_result` in the Python SDK.
+- **Expected:** A way to return a structured "refused by policy" result from any tool.
+- **Actual:** For every result without `isError`, the client checks `structuredContent` against
+  the tool's `outputSchema`, and a missing `structuredContent` raises `RuntimeError`. A shared
+  refusal shape would have to be added to all ten output schemas.
+- **Severity:** Minor
+- **Workaround:** Refusals are `isError: true` results with only a spoken sentence, which both
+  clients pass through. The model reads it as the tool's answer, and the simulator speaks it.
+- **Suggestion:** Spec guidance, or a standard `_meta` field, for policy refusals: "the server
+  understood and declined", as distinct from a tool failure.
+
+## FL-18: Strands MCPClient's HTTP transport takes fixed headers only
+
+- **Date:** 2026-10-22
+- **Area:** Strands Agents `strands.tools.mcp.mcp_client.streamable_http_transport`
+- **Task attempted:** Send the simulated speaker match (`X-Speaker-Confidence`) with the MCP
+  requests of one conversational turn, then go back to the default.
+- **Steps taken:** `inspect.signature(streamable_http_transport)` shows
+  `(url, headers=None, auth=None)`. The headers are copied when the session opens.
+- **Expected:** Per-call headers or metadata on `call_tool`, or a header callback.
+- **Actual:** Neither exists. Reconnecting for each turn would lose the MCP session,
+  subscriptions and pending elicitations.
+- **Severity:** Minor
+- **Workaround:** An `httpx.Auth` subclass (`VoiceMatch` in
+  `alexa-sim/orchestrator/carecircle_sim/mcp_link.py`) reads the device's current match in
+  `auth_flow` and sets the headers on each request.
+- **Suggestion:** Accept a `headers` callable, or per-call `headers` or `_meta` on
+  `MCPClient.call_tool_async`.
+
 ---
 
 ## Feature requests
@@ -370,6 +428,7 @@ happens, not reconstructed at the end.
 | Published list of MCP features the Alexa+ client supports (elicitation modes, Tasks, resources, prompts) | Avoids building features Alexa+ will ignore | Important |
 | TypeScript examples for MCP servers on AgentCore Runtime | MCP Apps tooling is TypeScript-first | Important |
 | Clear credit eligibility per Bedrock model for hackathons | Prevents unexpected Marketplace charges | Important |
+| Alexa+ passes the recognised voice profile and a match confidence to MCP servers | Lets a shared kitchen device tell Rose from a visitor before logging a dose. CareCircle simulates this today | Important |
 
 ---
 

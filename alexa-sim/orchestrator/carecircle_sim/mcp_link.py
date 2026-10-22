@@ -20,6 +20,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 from mcp import types
 from strands.tools.mcp import MCPClient
 from strands.tools.mcp.mcp_client import streamable_http_transport
@@ -37,6 +38,23 @@ UI_EXTENSION = "io.modelcontextprotocol/ui"
 UI_MIME_TYPE = "text/html;profile=mcp-app"
 # Marks tools/call requests that came from an MCP App view rather than the model.
 APP_ORIGIN_META = "carecircle.sim/origin"
+
+
+class VoiceMatch(httpx.Auth):
+    """Adds the device's simulated voice match to every request on this profile's session.
+
+    The server, not the model, decides what each confidence may do (server/src/mcp/identity.ts).
+    """
+
+    def __init__(self, link: ProfileLink) -> None:
+        self.link = link
+
+    def auth_flow(self, request: httpx.Request):  # type: ignore[override]
+        confidence, candidates = self.link.voice
+        request.headers["X-Speaker-Confidence"] = confidence
+        if candidates:
+            request.headers["X-Speaker-Candidates"] = ",".join(candidates)
+        yield request
 
 
 class AppToolDenied(Exception):
@@ -188,6 +206,8 @@ class ProfileLink:
         self.language = "en"
         self.last_reply: str | None = None
         self.last_activity = time.time()
+        # The simulated voice match for requests on this device: (confidence, candidates). Set per turn.
+        self.voice: tuple[str, list[str]] = ("high", [])
         # Alert ids already announced on this device, and reminder keys already given. Kept across sessions.
         self.announced: set[str] = set()
         self.reminded: set[str] = set()
@@ -202,7 +222,7 @@ class ProfileLink:
         @contextlib.asynccontextmanager
         async def logged():
             async with streamable_http_transport(
-                url=self.mcp_url, headers={"Authorization": f"Bearer dev:{self.profile}"}
+                url=self.mcp_url, headers={"Authorization": f"Bearer dev:{self.profile}"}, auth=VoiceMatch(self)
             ) as streams:
                 read, write, *rest = streams
                 yield (_LoggedRead(read, self), _LoggedWrite(write, self), *rest)

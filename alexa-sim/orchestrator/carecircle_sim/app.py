@@ -52,6 +52,8 @@ class TurnIn(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     # Slower speech for older listeners (Polly prosody rate).
     slow: bool = False
+    # The simulated voice match for this turn: who the device thinks is speaking, and how sure it is.
+    voice: Literal["high", "low", "unknown"] = "high"
 
 
 class LanguageIn(BaseModel):
@@ -275,6 +277,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "No pending elicitation with that id")
         return {"ok": True}
 
+    def voice_match(profile: str, confidence: str) -> tuple[str, list[str]]:
+        """Simulated speaker match. Low means unsure between this device's person and the next in the household."""
+        if confidence != "low":
+            return confidence, []
+        ids = list(settings.profiles)
+        return "low", [profile, ids[(ids.index(profile) + 1) % len(ids)]]
+
     @app.post("/turn")
     async def turn(body: TurnIn, request: Request) -> StreamingResponse:
         check_profile(body.profile)
@@ -284,10 +293,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         link = links.get(body.profile)
         runner: TurnRunner = state["runner"]
 
+        async def run_turn() -> None:
+            # The voice match applies to this turn only; the device is back to "matched" afterwards.
+            link.voice = voice_match(body.profile, body.voice)
+            bus.publish(body.profile, "voice_match", {"confidence": body.voice, "candidates": link.voice[1]})
+            try:
+                await runner.run(link, body.text.strip(), body.slow)
+            finally:
+                link.voice = ("high", [])
+
         async def stream() -> AsyncIterator[bytes]:
             async with lock:
                 queue = bus.subscribe(body.profile)
-                task = asyncio.create_task(runner.run(link, body.text.strip(), body.slow))
+                task = asyncio.create_task(run_turn())
                 try:
                     while True:
                         getter = asyncio.create_task(queue.get())

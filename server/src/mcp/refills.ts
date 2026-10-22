@@ -85,7 +85,7 @@ function baseUrl(deps: Deps, ctx: ServerContext): string {
 }
 
 /** Elicitation support as advertised by the client. A bare `elicitation: {}` means form only. */
-function elicitationSupport(server: McpServer) {
+export function elicitationSupport(server: McpServer) {
   const caps = server.server.getClientCapabilities()?.elicitation as { form?: object; url?: object } | undefined;
   return { form: !!caps && (!!caps.form || !caps.url), url: !!caps?.url };
 }

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Check, Ellipsis, Inbox, Mic, MicOff, Send } from 'lucide-react';
-import type { Language, ProfileId } from './api';
+import type { Language, ProfileId, VoiceMatch } from './api';
 import { Avatar } from './HomeScreen';
 import { useLiquidGlass } from './fx/liquidGlass';
 import { DEVICES, isHindi, nameOf, PROFILES, SUGGESTIONS, type Device, type Item, type Layout, type Prefs, type Ring, type Turn } from './model';
@@ -95,6 +95,9 @@ interface BarProps {
   remindHint?: string;
   inboxCount: number;
   onInbox: () => void;
+  /** The simulated voice match for the next request on this device */
+  voice: VoiceMatch;
+  onVoice: (v: VoiceMatch) => void;
 }
 
 export function ControlBar(props: BarProps) {
@@ -155,7 +158,13 @@ export function ControlBar(props: BarProps) {
 
 /* ---------- the "…" menu ---------- */
 
-function MoreMenu({ profile, lang, busy, device, onDevice, layout, onLayout, muted, onMute, onReset, onLanguage, prefs, onPrefs, onRemind, remindHint, inboxCount, onInbox }: BarProps) {
+const VOICES: { id: VoiceMatch; label: string; hint: string }[] = [
+  { id: 'high', label: 'Matched', hint: 'The device is sure who is speaking' },
+  { id: 'low', label: 'Unsure', hint: 'Unsure between two people: changes ask who is speaking first' },
+  { id: 'unknown', label: 'Unknown', hint: 'An unrecognised voice: changes are refused and noted for the family' }
+];
+
+function MoreMenu({ profile, lang, busy, device, onDevice, layout, onLayout, muted, onMute, onReset, onLanguage, prefs, onPrefs, onRemind, remindHint, inboxCount, onInbox, voice, onVoice }: BarProps) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -212,6 +221,14 @@ function MoreMenu({ profile, lang, busy, device, onDevice, layout, onLayout, mut
             {(['en', 'hi'] as const).map(l => (
               <button key={l} type="button" role="radio" aria-checked={lang === l} disabled={busy} onClick={() => lang !== l && onLanguage(l)}>
                 {l === 'en' ? 'English' : 'हिंदी'}
+              </button>
+            ))}
+          </div>
+          <p className="menu-label">Voice match, next request</p>
+          <div className="menu-seg" role="radiogroup" aria-label="Voice match for the next request">
+            {VOICES.map(v => (
+              <button key={v.id} type="button" role="radio" aria-checked={voice === v.id} title={v.hint} onClick={() => onVoice(v.id)}>
+                {v.label}
               </button>
             ))}
           </div>
