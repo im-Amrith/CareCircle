@@ -146,6 +146,21 @@ def route(text: str, last: LastResult | None, lang: str = "en") -> Plan:
     if _has(t, r"\bsend\b.*\bsummary\b", r"\bsummary\b.*\b(send|to the family|to everyone)\b", r"सारांश भेज", r"\bsummary bhej"):
         return Plan("send_daily_summary", {})
 
+    # "Book Mom's cardiology follow-up next week, mornings only, and sort out a ride."
+    if _has(t, r"\b(book|make|arrange|set up|get)\b.*\b(appointment|follow-?up|check-?up|cardiology|cardiologist)\b"):
+        m = re.search(r"\b(cardiology|cardiologist|heart|[a-z]+ology)\b", t)
+        specialty = (m.group(1) if m else "doctor") + (" follow-up" if re.search(r"follow-?up", t) else " appointment")
+        appt: dict[str, Any] = {"specialty": specialty.replace("cardiologist", "cardiology").replace("heart", "cardiology")}
+        if "this week" in t:
+            appt["window"] = "this week"
+        elif "next week" in t:
+            appt["window"] = "next week"
+        wants = [w for w, p in (("mornings only", r"\bmornings?\b"), ("afternoons only", r"\bafternoons?\b")) if re.search(p, t)]
+        wants += [d.group(0).strip() for d in re.finditer(r"\b(not|except|no) (on )?(monday|tuesday|wednesday|thursday|friday)s?\b", t)]
+        if wants:
+            appt["constraints"] = ", ".join(wants)
+        return Plan("coordinate_appointment", appt)
+
     if _has(t, r"(दोबारा|फिर से) (मंगा|मंगवा|ऑर्डर)|मंगा (दो|दीजिए|दें)|मंगवा (दो|दीजिए|दें)", r"\b(mangwa|manga) (do|dijiye|den)\b"):
         return Plan("request_refill", {})
 

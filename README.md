@@ -126,8 +126,9 @@ With the clock frozen at 9 am IST (`npm run sim:demo` or `sim:mock`):
 3. **Sam:** "How is Mom today?" Two of five doses taken, the next dose, the visit and the note.
 4. **Sam:** "Is she running low on anything?" then "Reorder it", then accept the form, then **Open secure page** and **Place order**. The card turns green when the server sends `notifications/elicitation/complete`.
 5. Switch to **Dot**. **Sam:** "Any updates?" The reply now ends "A refill arrives tomorrow."
-6. **Rose:** "I had a fall in the kitchen". She gets safety advice and a red alert card, and the family is flagged.
-7. **Rose:** "Should I take an extra blood pressure tablet?" She gets a safe refusal, and no tool is called.
+6. **Sam:** "Book Mom's cardiology follow-up next week, mornings only, and sort out a ride." A picker offers three times, best first ("Tue 10:30 am with Dr Rao, Maya drives"). Pick one: "Booked: Rose's cardiology follow-up with Dr Rao at Riverside Heart Clinic, Tuesday at 10:30 am. Maya is driving, leaving at 10:05 am." Decline instead, and nothing is booked.
+7. **Rose:** "I had a fall in the kitchen". She gets safety advice and a red alert card, and the family is flagged.
+8. **Rose:** "Should I take an extra blood pressure tablet?" She gets a safe refusal, and no tool is called.
 
 **New chat** resets a profile's MCP session and conversation. Restart `npm run sim:demo` to reset the family's data.
 
@@ -154,6 +155,7 @@ Click **Family view** at the top: Rose on a Show 8 on the left, Sam on a Phone o
 | `log_medication` | "I took my morning pills", "I took the blood pressure one" | Idempotent: repeating a call never double-logs. Ambiguous names return options to ask about |
 | `check_refills` | "Am I running low on anything?" | Read-only. Days of supply left, when each runs out, and any refill already on its way |
 | `request_refill` | "Reorder my blood pressure tablets", "Yes" after a low-supply warning | Asks first, then opens a one-time checkout link. Nothing is ordered until checkout is completed. Asking twice never orders twice |
+| `coordinate_appointment` | "Book Mom's cardiology follow-up next week, mornings only, and sort out a ride" | Checks the clinic, family calendars and travel time, offers up to three ranked options, and books only the one the person picks. Can run as an MCP Task |
 | `log_wellbeing` | "I slept badly", "I had a fall", "मैं रसोई में गिर गई" | Red-flag words (falls, chest pain, breathing trouble, in English or Hindi) return safety guidance and alert the family's devices |
 | `set_language` | "Talk to me in Hindi", "हिंदी में बात करो", "Speak English" | Changes only the caller's own language; the rest of the family keeps theirs |
 | `send_daily_summary` | "Send everyone today's summary" | Writes the day's summary to the family inbox, and to Amazon SNS when configured. Also sent automatically every evening |
@@ -180,6 +182,25 @@ How the checkout is secured:
 - Responses are sent with `Cache-Control: no-store`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY` and a CSP that allows no scripts.
 - No card or payment details are ever collected: payment is settled with the pharmacy. In this demo no real order leaves the server.
 - Only the recipient and coordinators can start a refill; helpers get a spoken refusal.
+
+### Appointments and rides
+
+`coordinate_appointment` plans a doctor's visit and a ride, then books only what the person picks.
+
+1. **Plan.** It checks the clinic's open slots, who in the family is free to drive (for the whole round trip) and the travel time, and ranks up to three options with a one-line reason each. A family member driving beats a taxi, then earliest first. Clinic, calendars and travel are synthetic services behind small interfaces (`server/src/domain/appointments.ts`), so a real booking API or calendar can replace them.
+2. **Pick.** Clients with form elicitation get a slot picker. Declining books nothing. As with refills, `confirm: true` from the model never skips the picker. Voice-only clients get `needs_choice` with the options read aloud. To book, they call again with `option_id` and `confirm: true` after a clear yes. The server only accepts an option it read out to that family in the last 30 minutes.
+3. **Book.** The appointment shows in `get_care_status` ("Cardiology follow-up with Dr Rao on Tuesday at 10:30 am. Maya is driving.") and on family screens. The driver also gets a helper task, for example "Drive Rose to Riverside Heart Clinic" at 10:05 am. Booking the same slot twice never doubles up.
+
+**MCP Tasks (2025-11-25, experimental).** The tool is listed with `execution.taskSupport: "optional"`, and the server advertises `capabilities.tasks`.
+
+- A `tools/call` with a `task` param returns a task handle at once.
+- The status moves `working` ("Checking the clinic…", "Checking who can drive…") to `input_required` (pick a slot) to `completed`. Each change is sent as `notifications/tasks/status`.
+- The picker is asked as an elicitation on the client's `tasks/result` request, tagged with the related task.
+- `tasks/get`, `tasks/result`, `tasks/list` and `tasks/cancel` are supported. Cancelling while it waits for a pick books nothing.
+- Tasks belong to the member who started them.
+- Without a `task` param, the tool runs synchronously and sends `notifications/progress` with the same steps.
+
+The MCP TypeScript SDK 2.3.1 has the task wire types but no task runtime, so `server/src/mcp/tasks.ts` provides one (see the friction log).
 
 ### Resources and prompts
 

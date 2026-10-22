@@ -267,6 +267,42 @@ happens, not reconstructed at the end.
   2026-07-28 (`subscriptions/listen`). In the MCP SDK, only warn when the negotiated protocol
   version is one where subscribe is actually gone.
 
+## FL-13: MCP TypeScript SDK 2.3.1 has the Tasks wire types but no Tasks runtime, and its client rejects task results
+
+- **Date:** 2026-10-22
+- **Area:** `@modelcontextprotocol/server` 2.3.1, `@modelcontextprotocol/client` 2.3.1, MCP
+  2025-11-25 Tasks (experimental)
+- **Task attempted:** Run `coordinate_appointment` as an MCP Task: return a task handle at once,
+  move through `working`, `input_required` and `completed`, and support `tasks/get`,
+  `tasks/result` and `tasks/cancel`.
+- **Steps taken:** Read the type definitions before writing code, as the build brief asked, then
+  ran a spike test against an in-memory server and client.
+- **Expected:** A task store and a way to register a tool as task-capable, as earlier 1.x SDKs
+  had in their experimental API.
+- **Actual:** Three separate gaps:
+  1. The server exports `CreateTaskResultSchema`, `GetTaskRequestSchema` and the rest, but the
+     docs comment in the type definitions says the task methods are "2025-11-25 wire vocabulary
+     with no SDK runtime". `RequestMethod` excludes `tasks/*`, so the typed
+     `setRequestHandler('tasks/get', handler)` doesn't compile, and there is no task store.
+  2. `McpServer.registerTool()` accepts no `execution` field. It passes `undefined` through to
+     `_createRegisteredTool`, so `execution.taskSupport` can't be declared the normal way.
+  3. `McpServer` validates every `tools/call` result as a `CallToolResult`. The 2.3.1 *client*
+     rejects a `CreateTaskResult` even when you pass `CreateTaskResultSchema` to `request()`:
+     `Invalid result for tools/call: content is required when the body carries 'task' — another
+     result family cannot default into an empty tools/call success`.
+- **Severity:** Major
+- **Workaround:** `server/src/mcp/tasks.ts` (about 275 lines) implements the runtime: a task
+  registry with owner checks, TTL and cancel. It registers `tasks/*` through the custom-schema
+  form `setRequestHandler(method, { params }, handler)`, which the SDK allows for the Tasks
+  extension names. Task-augmented `tools/call` requests are routed by wrapping McpServer's stored
+  `tools/call` handler, which uses a private field. `execution` is set on the registered tool
+  object after `registerTool()`. Server tests drive the task flow with raw JSON-RPC over
+  `InMemoryTransport`, because the SDK client can't read the task handle.
+- **Suggestion:** Either ship an `experimental.tasks` server helper (task store, task-capable
+  `registerTool`, `tasks/*` handlers) for peers on 2025-11-25, or say in the README that Tasks are
+  wire-only in 2.x. Let `registerTool()` pass `execution` through. Let the client accept a
+  `CreateTaskResult` when the request carried a `task` param.
+
 ---
 
 ## Feature requests

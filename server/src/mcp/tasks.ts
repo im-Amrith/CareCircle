@@ -4,7 +4,7 @@
  * @modelcontextprotocol/server 2.3.1 ships the task wire schemas but no task runtime:
  * `setRequestHandler` won't take the `tasks/*` names in its typed form, and McpServer's
  * `tools/call` handler validates every result as a CallToolResult. So CareCircle keeps
- * its own small runtime (see friction log FL-14):
+ * its own small runtime (see friction log FL-13):
  *
  * - `tools/call` with a `task` param, for a tool registered here, returns a
  *   CreateTaskResult at once and runs the work in the background.
@@ -237,7 +237,7 @@ export function installTasks(server: McpServer, deps: Deps, taskTools: Record<st
     return record;
   };
   const notify = (task: WireTask) => {
-    // The typed notification() surface leaves out the task vocabulary (FL-14), so send it as a plain notification.
+    // The typed notification() surface leaves out the task vocabulary (FL-13), so send it as a plain notification.
     void (server.server.notification as (n: { method: string; params: object }) => Promise<void>)({ method: 'notifications/tasks/status', params: task }).catch(() => undefined);
   };
 

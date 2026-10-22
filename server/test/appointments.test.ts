@@ -173,7 +173,7 @@ describe('coordinate_appointment without a task (voice and form)', () => {
 /* ---------- MCP Tasks, over raw JSON-RPC ---------- */
 
 /**
- * The 2.3.1 TypeScript client rejects a CreateTaskResult from tools/call (FL-14), so
+ * The 2.3.1 TypeScript client rejects a CreateTaskResult from tools/call (FL-13), so
  * these tests speak JSON-RPC directly to the server over an in-memory transport.
  */
 async function rawClient(deps: Deps, opts: { elicit?: (params: any) => any } = {}) {
