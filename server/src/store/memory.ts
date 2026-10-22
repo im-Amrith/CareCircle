@@ -3,6 +3,7 @@ import type {
   DoseLog,
   Family,
   FamilyMessage,
+  HelperTask,
   Language,
   Medication,
   Member,
@@ -21,6 +22,7 @@ export class MemoryStore implements CareStore {
   pharmacies = new Map<string, Pharmacy>();
   doseLogs: DoseLog[] = [];
   visits: Visit[] = [];
+  helperTasks: HelperTask[] = [];
   wellbeing: WellbeingNote[] = [];
   orders: RefillOrder[] = [];
   messages: FamilyMessage[] = [];
@@ -80,6 +82,20 @@ export class MemoryStore implements CareStore {
     return this.visits
       .filter(v => v.familyId === familyId && v.date >= fromDate && v.date <= toDate)
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  }
+
+  async addVisit(visit: Visit) {
+    this.visits.push(visit);
+  }
+
+  async listHelperTasks(familyId: string, fromDate: string, toDate: string) {
+    return this.helperTasks
+      .filter(t => t.familyId === familyId && t.date >= fromDate && t.date <= toDate)
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  }
+
+  async addHelperTask(task: HelperTask) {
+    this.helperTasks.push(task);
   }
 
   async listWellbeing(familyId: string, fromDate: string, toDate: string) {

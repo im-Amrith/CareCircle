@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { CareStore } from './types.js';
 
 /** What changed. Sessions turn these into `notifications/resources/updated`. */
-export type ChangeKind = 'dose' | 'supply' | 'wellbeing' | 'order' | 'member' | 'message';
+export type ChangeKind = 'dose' | 'supply' | 'wellbeing' | 'order' | 'member' | 'message' | 'visit' | 'task';
 
 export interface Change {
   familyId: string;
@@ -41,7 +41,9 @@ const WRITES: Writes = {
   addOrder: { kind: 'order', family: ([order]) => order.familyId },
   transitionOrder: { kind: 'order', family: (_args, order) => order?.familyId },
   setMemberLanguage: { kind: 'member', family: (_args, member) => member?.familyId },
-  addMessage: { kind: 'message', family: ([message]) => message.familyId }
+  addMessage: { kind: 'message', family: ([message]) => message.familyId },
+  addVisit: { kind: 'visit', family: ([visit]) => visit.familyId },
+  addHelperTask: { kind: 'task', family: ([task]) => task.familyId }
 };
 
 /**

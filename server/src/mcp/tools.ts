@@ -58,7 +58,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
     {
       title: "Today's care status",
       description:
-        "Summarise the care recipient's day: which medication doses are taken, due, upcoming or missed, the next dose, visits, the latest wellbeing note, and medicines running low. Use for 'How is Mom today?', 'Good morning', 'What's happening today?'. Read-only.",
+        "Summarise the care recipient's day: which medication doses are taken, due, upcoming or missed, the next dose, visits, booked appointments, the latest wellbeing note, and medicines running low. Use for 'How is Mom today?', 'Good morning', 'What's happening today?'. Read-only.",
       inputSchema: z.object({
         date: DateString.optional().describe('Family-local date, YYYY-MM-DD. Defaults to today.'),
         detail: z.enum(['brief', 'full']).default('brief').describe('brief for a one-breath spoken answer, full for more detail')
@@ -78,6 +78,19 @@ export function registerTools(server: McpServer, deps: Deps): void {
         doses: z.array(DoseOut),
         nextDose: DoseOut.nullable(),
         visits: z.array(z.object({ who: z.string(), time: z.string(), purpose: z.string() })),
+        appointments: z
+          .array(
+            z.object({
+              id: z.string(),
+              date: z.string(),
+              time: z.string(),
+              purpose: z.string(),
+              place: z.string(),
+              driver: z.string().optional(),
+              leaveAt: z.string().optional()
+            })
+          )
+          .describe('Booked appointments from today through the next week'),
         latestWellbeing: z
           .object({ note: z.string(), severity: z.string(), date: z.string(), time: z.string(), redFlag: z.boolean() })
           .nullable(),

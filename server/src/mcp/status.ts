@@ -59,8 +59,23 @@ export async function careStatus(deps: Deps, caller: Caller, day: string, detail
 
   const members = await deps.store.listMembers(caller.family.id);
   const memberOf = (id: string) => members.find(m => m.id === id);
-  const rawVisits = await deps.store.listVisits(caller.family.id, day, day);
+  const rawVisits = (await deps.store.listVisits(caller.family.id, day, day)).filter(v => v.kind !== 'appointment');
   const visits = rawVisits.map(v => ({ who: memberOf(v.who)?.name ?? v.who, time: v.time, purpose: v.purpose }));
+  // Booked appointments from today through the next week, with who drives.
+  const rides = await deps.store.listHelperTasks(caller.family.id, day, addDays(day, APPOINTMENT_DAYS));
+  const appointments = (await deps.store.listVisits(caller.family.id, day, addDays(day, APPOINTMENT_DAYS)))
+    .filter(v => v.kind === 'appointment')
+    .map(v => {
+      const ride = rides.find(t => t.visitId === v.id);
+      return {
+        id: v.id,
+        date: v.date,
+        time: v.time,
+        purpose: v.purpose,
+        place: v.place ?? '',
+        ...(ride ? { driver: memberOf(ride.assigneeId)?.name ?? ride.assigneeId, leaveAt: ride.time } : {})
+      };
+    });
   const notes = await deps.store.listWellbeing(caller.family.id, addDays(day, -1), day);
   const latest = notes.at(-1);
   const alerts = refillAlerts(meds, caller.local.date);
@@ -104,6 +119,7 @@ export async function careStatus(deps: Deps, caller: Caller, day: string, detail
       const who = memberOf(v.who);
       parts.push(`${who?.name ?? v.who} ${timeHi(v.time)} ${willComeHi(who?.pronoun)}।`);
     }
+    for (const a of appointments.slice(0, 1)) parts.push(`${dateHi(a.date, caller.local.date)} ${timeHi(a.time)} ${a.place} में अपॉइंटमेंट है${a.driver ? `, ${a.driver} ले जाएँगे` : ''}।`);
     if (showNote) parts.push(`${caller.isRecipient ? 'आपने' : `${name} ने`} बताया था: ${latest.note.replace(/[.।]$/, '')}।`);
     if (firstAlert) {
       parts.push(`${firstAlert.name} कम है: लगभग ${firstAlert.daysLeft} दिन की बची है।`);
@@ -133,6 +149,11 @@ export async function careStatus(deps: Deps, caller: Caller, day: string, detail
       if (missedToday.length) parts.push(`Missed: ${listJoin(missedToday.map(d => d.name))}.`);
     }
     for (const v of visits) parts.push(`${v.who} visits at ${spokenTime(v.time)}.`);
+    for (const a of appointments.slice(0, 1)) {
+      const driving = a.driver ? (a.driver === caller.member.name ? ` You're driving.` : ` ${a.driver} is driving.`) : '';
+      const when = spokenDate(a.date, caller.local.date);
+      parts.push(`${a.purpose} ${when === 'today' || when === 'tomorrow' ? when : `on ${when}`} at ${spokenTime(a.time)}.${driving}`);
+    }
     if (showNote) {
       const said = latest.note.replace(/\.$/, '');
       // Lower-case the first letter so it reads mid-sentence, but never the pronoun "I".
@@ -158,6 +179,7 @@ export async function careStatus(deps: Deps, caller: Caller, day: string, detail
     doses: states.map(doseOut),
     nextDose: next ? doseOut(next) : null,
     visits,
+    appointments,
     latestWellbeing: latest ? { note: latest.note, severity: latest.severity, date: latest.date, time: latest.time, redFlag: latest.redFlag } : null,
     refillAlerts: await Promise.all(
       alerts.map(async a => {
@@ -169,6 +191,9 @@ export async function careStatus(deps: Deps, caller: Caller, day: string, detail
   };
   return { structured, speech: sentences(...parts) };
 }
+
+/** How far ahead get_care_status mentions booked appointments. */
+export const APPOINTMENT_DAYS = 7;
 
 /** A dose is worth a gentle reminder this long after its time, if it still isn't logged. */
 export const REMINDER_AFTER_MIN = 30;

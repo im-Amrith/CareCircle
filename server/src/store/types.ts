@@ -80,8 +80,32 @@ export interface Visit {
   familyId: string;
   date: string;
   time: string;
+  /** Member id of who visits, or for an appointment, who it is for */
   who: string;
   purpose: string;
+  /** A family visit at home (default), or a booked appointment away from home */
+  kind?: 'visit' | 'appointment';
+  /** Where an appointment is, e.g. "Riverside Heart Clinic" */
+  place?: string;
+  doctor?: string;
+  /** Member id who booked it */
+  bookedBy?: string;
+}
+
+/** Something a family member agreed to do, e.g. drive Rose to an appointment. */
+export interface HelperTask {
+  id: string;
+  familyId: string;
+  assigneeId: string;
+  /** e.g. "Drive Rose to Riverside Heart Clinic" */
+  text: string;
+  date: string;
+  /** HH:MM, when to start */
+  time: string;
+  /** The appointment this task belongs to */
+  visitId?: string;
+  createdBy: string;
+  createdAt: string;
 }
 
 export type Severity = 'low' | 'medium' | 'high';
@@ -155,6 +179,10 @@ export interface CareStore {
   listDoseLogs(familyId: string, fromDate: string, toDate: string): Promise<DoseLog[]>;
   addDoseLog(log: DoseLog): Promise<void>;
   listVisits(familyId: string, fromDate: string, toDate: string): Promise<Visit[]>;
+  addVisit(visit: Visit): Promise<void>;
+  /** Inclusive date range, family-local YYYY-MM-DD */
+  listHelperTasks(familyId: string, fromDate: string, toDate: string): Promise<HelperTask[]>;
+  addHelperTask(task: HelperTask): Promise<void>;
   listWellbeing(familyId: string, fromDate: string, toDate: string): Promise<WellbeingNote[]>;
   addWellbeing(note: WellbeingNote): Promise<void>;
   listOrders(familyId: string): Promise<RefillOrder[]>;

@@ -3,6 +3,8 @@ import type { CareStore, Family, Language, Member, Role } from '../store/types.j
 import type { ChangeHub } from '../store/changes.js';
 import type { Notifier } from '../notify/notifier.js';
 import type { Clock } from '../config.js';
+import type { AppointmentPlanner } from '../domain/appointments.js';
+import type { TaskRegistry } from './tasks.js';
 import { localParts, type LocalParts } from '../domain/time.js';
 import { voiceSafe } from '../domain/speech.js';
 
@@ -22,6 +24,12 @@ export interface Deps {
   changes?: ChangeHub;
   /** Delivers the evening summary (inbox, plus Amazon SNS when configured). Set by createHttpApp. */
   notifier?: Notifier;
+  /** Plans appointment options. Defaults to the deterministic planner over synthetic services. */
+  appointmentPlanner?: AppointmentPlanner;
+  /** MCP Tasks for every session. Created on first use. */
+  tasks?: TaskRegistry;
+  /** Family id -> appointment options last read out to a voice-only client, for its "yes". */
+  issuedAppointmentOptions?: Map<string, { at: number; ids: Set<string> }>;
 }
 
 export interface Caller {
