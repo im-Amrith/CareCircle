@@ -144,6 +144,10 @@ Click **Family view** at the top: Rose on a Show 8 on the left, Sam on a Phone o
 6. Switch Rose to **हिंदी** (or say "Talk to me in Hindi"). **Rose:** "सुप्रभात". She hears her status in Hindi and her dashboard is in Hindi; Sam still hears English.
 7. **Sam:** "Send everyone today's summary". The summary arrives as a message on Sam's phone (and Maya's), and by email when SNS is set up.
 
+## Agent Skill
+
+[`skills/carecircle/SKILL.md`](skills/carecircle/SKILL.md) is an [Agent Skill](https://agentskills.io/). It teaches any agent to use this server: how to connect, which tool fits each request, the safety rules and two worked examples. [`skills/carecircle/README.md`](skills/carecircle/README.md) explains how to install it in Claude Code or Kiro.
+
 ## What the server exposes
 
 ### Tools
@@ -273,6 +277,7 @@ mcp.config.json         Client config pointing at the local server
 alexa-sim/orchestrator/ Simulator brain (Python): MCP client, Strands agent on Bedrock, Polly, SSE API
 alexa-sim/web/          Simulator UI (React + Vite): device frames, cards, elicitation, protocol panel
 scripts/                Cross-platform setup and launcher (npm run setup / sim)
+skills/carecircle/      Agent Skill: how any agent should use the CareCircle server
 docs/friction-log.md    Developer friction log for the hackathon
 ```
 
