@@ -116,7 +116,7 @@ export function refillAlerts(meds: Medication[], today: string, withinDays = DEF
 
 const GENERIC = new Set([
   'pill', 'pills', 'tablet', 'tablets', 'medicine', 'medicines', 'medication', 'medications', 'meds',
-  'my', 'the', 'all', 'one', 'ones', 'dose', 'doses', 'morning', 'evening', 'night', 'noon', 'and', 'took', 'taken'
+  'my', 'her', 'his', 'their', 'your', 'the', 'all', 'one', 'ones', 'dose', 'doses', 'morning', 'evening', 'night', 'noon', 'and', 'took', 'taken'
 ]);
 
 function normalize(s: string): string {

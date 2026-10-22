@@ -173,12 +173,12 @@ describe("Who's speaking? Unknown voices", () => {
     const today = await rose.client.readResource({ uri: 'carecircle://family/fam-rose/today' });
     const snapshot = JSON.parse((today.contents[0] as { text: string }).text);
     expect(snapshot.voiceChecks).toEqual([
-      expect.objectContaining({ device: 'Rose', attempted: "log Rose's 8 am Metformin", text: "An unrecognised voice tried to log Rose's 8 am Metformin at 9 am. Nothing was changed." })
+      expect.objectContaining({ device: 'Rose', attempted: "log Rose's 8 am Metformin", text: "An unrecognised voice tried to log Rose's 8 am Metformin. That was at 9 am, and nothing was changed." })
     ]);
 
     const sam = await device(srv.url, 'sam');
     const first = await call(sam.client, 'send_daily_summary');
-    expect(first.structuredContent?.text).toContain("Voice check: An unrecognised voice tried to log Rose's 8 am Metformin at 9 am. Nothing was changed.");
+    expect(first.structuredContent?.text).toContain("Voice check: An unrecognised voice tried to log Rose's 8 am Metformin. That was at 9 am, and nothing was changed.");
     const second = await call(sam.client, 'send_daily_summary');
     expect(second.structuredContent?.text).not.toContain('Voice check');
     await rose.client.close();
@@ -190,6 +190,8 @@ describe("Who's speaking? Unknown voices", () => {
     const say = (tool: string, args: Record<string, unknown> = {}) => describeAttempt(srv.deps, caller, tool, args);
     expect(await say('log_medication', { spoken_name: 'metformin' })).toBe("log Rose's 8 am Metformin");
     expect(await say('log_medication', {})).toBe("log Rose's 8 am Metformin and Vitamin D3");
+    expect(await say('log_medication', { spoken_name: 'her morning pills' })).toBe("log Rose's 8 am Metformin and Vitamin D3");
+    expect(await say('log_medication', { spoken_name: 'the purple ones' })).toBe('log a dose for Rose');
     expect(await say('log_medication', { slot: 'evening', status: 'skipped' })).toBe("mark Rose's 8 pm Metformin and Amlodipine as skipped");
     expect(await say('request_refill', { spoken_name: 'amlodipine' })).toBe("reorder Rose's Amlodipine");
     expect(await say('coordinate_appointment', { specialty: 'cardiology follow-up' })).toBe("book Rose's cardiology follow-up");

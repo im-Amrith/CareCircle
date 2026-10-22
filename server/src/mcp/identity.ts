@@ -78,7 +78,11 @@ export async function describeAttempt(deps: Deps, caller: Caller, tool: string, 
       const ids = Array.isArray(args.medication_ids) ? (args.medication_ids as unknown[]).filter(i => typeof i === 'string') : [];
       const spoken = text('spoken_name');
       let targets = meds.filter(m => ids.includes(m.id));
-      if (!targets.length && spoken && !isGenericPhrase(spoken)) targets = matchMedication(meds, spoken).matches;
+      if (!targets.length && spoken && !isGenericPhrase(spoken)) {
+        // Say only what the tool would log: a name that matches nothing names no dose.
+        targets = matchMedication(meds, spoken).matches;
+        if (!targets.length) return `log a dose for ${name}`;
+      }
       const asked = text('slot');
       const slot = asked ?? slotToLog(states, caller.family, caller.now);
       if (!targets.length && slot) targets = meds.filter(m => m.schedule.some(s => s.slot === slot));
@@ -132,7 +136,7 @@ async function record(deps: Deps, caller: Caller, confidence: VoiceCheck['confid
 
 /** "An unrecognised voice tried to log Rose's 8 am Metformin." */
 export function voiceCheckSentence(check: VoiceCheck): string {
-  return `An unrecognised voice tried to ${check.attempted} at ${spokenTime(check.time)}. Nothing was changed.`;
+  return `An unrecognised voice tried to ${check.attempted}. That was at ${spokenTime(check.time)}, and nothing was changed.`;
 }
 
 function refused(caller: Caller, attempted: string): CallToolResult {

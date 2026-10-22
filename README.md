@@ -246,11 +246,17 @@ An Echo in Rose's kitchen is shared. Rose, Sam, Maya and visitors all talk to it
 | --- | --- | --- |
 | High | Work | Work as usual |
 | Low | Work | Nothing changes until the person says who they are. Clients with forms get "Who's speaking?", offering only the candidates and *Someone else*. Clients without forms get a phone confirmation through URL elicitation: a one-time "Was this you?" page at `/voice-check/<token>`. The change then runs as the person who confirmed, with that person's role |
-| Unknown | Work | Refused politely ("Sorry, I don't recognise this voice, so I can't log Rose's 8 am Metformin…"), recorded in the care log (the live `today` resource) and listed in the next family summary: "Voice check: An unrecognised voice tried to log Rose's 8 am Metformin at 9 am. Nothing was changed." |
+| Unknown | Work | Refused politely ("Sorry, I don't recognise this voice, so I can't log Rose's 8 am Metformin…"), recorded in the care log (the live `today` resource) and listed in the next family summary: "Voice check: An unrecognised voice tried to log Rose's 8 am Metformin. That was at 9 am, and nothing was changed." |
 
 When someone logs a dose for someone else, the log records who did it. Sam logging Rose's Metformin stores `loggedBy: "sam"`, and it shows in `log_medication` and `get_care_status` results. If Maya confirms on Sam's device, the log says Maya.
 
 In the simulator, each device shows a badge such as "Sam · voice matched" or "Not sure who's speaking". The … menu sets the match for the next request only. Mock and Bedrock modes both work unchanged, because the rules live on the server.
+
+| Unsure: who's speaking? | Unknown: refused | In the family summary |
+| --- | --- | --- |
+| ![Who's speaking form offering Sam, Maya or someone else](docs/screenshots/voice-unsure-picker.jpg) | ![An unrecognised voice is refused](docs/screenshots/voice-unknown-refused.jpg) | ![The evening summary lists the voice check](docs/screenshots/voice-check-digest.jpg) |
+
+![The … menu's voice match control](docs/screenshots/voice-match-menu.jpg)
 
 ### Resources and prompts
 
