@@ -25,6 +25,7 @@ import { DeviceView } from './DeviceView';
 import { ElicitationCard, type ElicitationState } from './ElicitationCard';
 import {
   nameOf,
+  PROFILES,
   TOOL_LABEL,
   type Item,
   type Layout,
@@ -73,8 +74,8 @@ export function App() {
   const [inbox, setInbox] = useState<Record<ProfileId, FamilyMessage[]>>(() => byProfile((): FamilyMessage[] => []));
   const [notices, setNotices] = useState<Record<ProfileId, Notice[]>>(() => byProfile((): Notice[] => []));
   const [muted, setMuted] = useState(false);
-  // Under the hood starts open on wide screens and folded away on narrow ones.
-  const [panelCollapsed, setPanelCollapsed] = useState(() => window.matchMedia('(max-width: 1100px)').matches);
+  // Under the hood starts folded away; the device is the hero.
+  const [panelCollapsed, setPanelCollapsed] = useState(true);
   /** A pane that just changed person shows "Switching to Sam's device" for a moment. */
   const [switching, setSwitching] = useState<Record<number, ProfileId | null>>({});
   const [health, setHealth] = useState<Health | null>(null);
@@ -393,6 +394,15 @@ export function App() {
       })
       .map(i => ({ e: i.e, node: elicitationCard(i.e) }));
 
+  const changeLayout = (l: Layout) => {
+    setLayout(l);
+    // Two different people, so the live updates are visible.
+    if (l === 'family') setPanes(all => (all[0].profile === all[1].profile ? [all[0], { ...all[1], profile: all[0].profile === 'sam' ? 'rose' : 'sam' }] : all));
+  };
+
+  /** The hero line steps aside once anyone is talking, so the device moves up. */
+  const conversing = shown.some(x => profiles[x.profile].turns.length > 0);
+
   const renderPane = (pane: Pane, index: number) => {
     const p = pane.profile;
     const lang = langOf(p);
@@ -414,6 +424,12 @@ export function App() {
         />
 
         <div className={`device device-${pane.device}`}>
+          {/* The person's tint, softly lit behind the device; crossfades when they change. */}
+          <div className="glow" aria-hidden="true">
+            {PROFILES.map(x => (
+              <span key={x.id} className={`glow-${x.id}${x.id === p ? ' glow-on' : ''}`} />
+            ))}
+          </div>
           <DeviceView
             pane={pane}
             turns={profiles[p].turns}
@@ -445,6 +461,8 @@ export function App() {
           suggestions={suggestionsFor(p, lang, profiles[p].turns)}
           device={pane.device}
           onDevice={device => setPane({ device })}
+          layout={layout}
+          onLayout={changeLayout}
           muted={muted}
           onMute={() => setMuted(m => !m)}
           onReset={() => void reset(p)}
@@ -465,16 +483,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar
-        health={health}
-        layout={layout}
-        muted={muted}
-        onLayout={l => {
-          setLayout(l);
-          // Two different people, so the live updates are visible.
-          if (l === 'family') setPanes(all => (all[0].profile === all[1].profile ? [all[0], { ...all[1], profile: all[0].profile === 'sam' ? 'rose' : 'sam' }] : all));
-        }}
-      />
+      <TopBar health={health} />
 
       {banner && (
         <div className={`banner banner-${banner.tone}`} role="alert">
@@ -489,7 +498,15 @@ export function App() {
       )}
 
       <div className="layout">
-        <main className={`stage stage-${layout}`}>{shown.map(renderPane)}</main>
+        <main className={`stage stage-${layout}`}>
+          <header className={`hero${conversing ? ' hero-away' : ''}`} aria-hidden={conversing}>
+            <div className="hero-inner">
+              <h2 className="hero-title">Care, coordinated.</h2>
+              <p className="hero-sub">One family. One care record. Just ask.</p>
+            </div>
+          </header>
+          <div className={`panes panes-${layout}`}>{shown.map(renderPane)}</div>
+        </main>
 
         <ProtocolPanel
           entries={visibleRpc}

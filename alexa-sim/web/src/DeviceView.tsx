@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 
 import { BellRing, MessageSquareText, TriangleAlert, X } from 'lucide-react';
 import type { Elicitation, Language, ProfileId, Today } from './api';
 import { Avatar, HomeScreen, timeOf, useFamilyClock } from './HomeScreen';
-import { isHindi, nameOf, roleOf, SUGGESTIONS, type Item, type Notice, type Pane, type Prefs, type Ring, type Turn } from './model';
+import { isHindi, nameOf, roleOf, type Item, type Notice, type Pane, type Prefs, type Ring, type Turn } from './model';
 
 export interface DeviceViewProps {
   pane: Pane;
@@ -112,9 +112,7 @@ function Strip({ pane, live, lang, connected }: { pane: Pane; live: Today | null
           <span className="sr-only">, {nameOf(pane.profile)} is using this device</span>
         </span>
       </span>
-      <span className={`strip-link ${connected ? 'strip-link-on' : ''}`} title={connected ? 'Connected to CareCircle' : 'Offline'}>
-        <span className="sr-only">{connected ? 'Connected' : 'Offline'}</span>
-      </span>
+      <span className="sr-only">{connected ? 'Connected' : 'Offline'}</span>
     </header>
   );
 }
@@ -204,7 +202,7 @@ export function DeviceView(props: DeviceViewProps) {
     <div className={`screen${prefs.large ? ' screen-large' : ''}`}>
       <Strip pane={pane} live={live} lang={lang} connected={connected} />
       {idle ? (
-        <HomeScreen profile={p} live={live} lang={lang} suggestion={SUGGESTIONS[p][lang][0]} />
+        <HomeScreen profile={p} live={live} lang={lang} />
       ) : (
         <div className="convo" aria-live="polite" ref={convoRef}>
           {turns.map(t => (
@@ -235,8 +233,9 @@ export function DeviceView(props: DeviceViewProps) {
       <div className="show-bezel">
         <span className={`lightbar ring-${ring}`} aria-hidden="true" />
         {screen}
+        <span className="glass-reflection" aria-hidden="true" />
       </div>
-      {pane.device === 'show8' && <span className="show-base" aria-hidden="true" />}
+      {pane.device === 'show8' && <span className="show-stand" aria-hidden="true" />}
     </div>
   );
 }

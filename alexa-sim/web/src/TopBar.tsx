@@ -1,46 +1,25 @@
-import { AudioLines, Cpu, Plug } from 'lucide-react';
 import type { Health } from './api';
-import type { Layout } from './model';
 
-interface Props {
-  health: Health | null;
-  layout: Layout;
-  onLayout: (l: Layout) => void;
-  muted: boolean;
+/** "global.amazon.nova-2-lite-v1:0" -> "Nova 2 Lite" */
+function modelName(id?: string) {
+  if (!id) return 'Bedrock';
+  const m = id.match(/nova-(\d+)-(\w+)/i);
+  return m ? `Nova ${m[1]} ${m[2][0].toUpperCase()}${m[2].slice(1)}` : id.replace(/^global\./, '');
 }
 
-export function TopBar({ health, layout, onLayout, muted }: Props) {
+/** Wordmark and one quiet status pill: which brain is answering, and whether the server is up. */
+export function TopBar({ health }: { health: Health | null }) {
   const reachable = !!health?.mcp.reachable;
+  const brain =
+    health?.brain.mode === 'bedrock' ? `${modelName(health.brain.model)}${health.brain.region ? ` · ${health.brain.region}` : ''}` : 'Mock mode';
   return (
     <header className="topbar">
-      <div className="brand">
-        <span className="brand-mark" aria-hidden="true" />
-        <h1>CareCircle</h1>
-        <span className="brand-note">Simulated Alexa+ experience</span>
-      </div>
-      <div className="segmented" role="radiogroup" aria-label="Layout">
-        <button type="button" role="radio" aria-checked={layout === 'single'} className={layout === 'single' ? 'on' : ''} onClick={() => onLayout('single')}>
-          One device
-        </button>
-        <button type="button" role="radio" aria-checked={layout === 'family'} className={layout === 'family' ? 'on' : ''} title="Two family members side by side, updating live" onClick={() => onLayout('family')}>
-          Family view
-        </button>
-      </div>
-      <ul className="badges" aria-label="Status">
-        <li className={`badge ${reachable ? 'badge-ok' : 'badge-bad'}`} title={health?.mcp.url}>
-          <Plug aria-hidden="true" />
-          {reachable ? 'MCP connected' : 'MCP unreachable'}
-        </li>
-        <li className="badge" title={health?.brain.reason ?? health?.brain.region}>
-          <Cpu aria-hidden="true" />
-          {health?.brain.mode === 'bedrock' ? `Bedrock · ${health.brain.model?.replace(/^global\./, '')}` : 'Mock mode'}
-        </li>
-        <li className="badge" title={health?.speech.detail}>
-          <AudioLines aria-hidden="true" />
-          {health?.speech.mode === 'polly' ? `Polly · ${health.speech.voice}` : 'Browser voice'}
-          {muted ? ' · muted' : ''}
-        </li>
-      </ul>
+      <h1 className="wordmark">CareCircle</h1>
+      <p className="status-pill" title={reachable ? `CareCircle server at ${health?.mcp.url}` : 'The CareCircle server is not reachable'}>
+        <span className={`status-dot${reachable ? '' : ' status-dot-off'}`} aria-hidden="true" />
+        {reachable ? brain : 'Server offline'}
+        <span className="sr-only">{reachable ? ', connected to the CareCircle server' : ''}</span>
+      </p>
     </header>
   );
 }
