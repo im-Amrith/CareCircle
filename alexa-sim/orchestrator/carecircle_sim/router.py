@@ -143,6 +143,35 @@ def route(text: str, last: LastResult | None, lang: str = "en") -> Plan:
     if no and last and last.name == "request_refill":
         return Plan(reply=DECLINED_HI if hi else DECLINED)
 
+    # Morning check-ins: "Turn off the check-ins" asks first; a following yes turns them off.
+    if yes and last and last.name == "set_check_ins" and last.structured.get("result") == "needs_confirmation":
+        return Plan("set_check_ins", {"action": "turn_off", "confirm": True})
+    if no and last and last.name == "set_check_ins" and last.structured.get("result") == "needs_confirmation":
+        return Plan(reply="Okay, I'll keep the morning check-ins on.")
+    away = _has(t, r"\b(staying with|away|in (the )?hospital|travell?ing|on holiday|visiting)\b")
+    if _has(t, r"\bcheck-? ?ins?\b", r"\bchecking in\b") or (away and _has(t, r"\b(till|until|through)\b")):
+        if _has(t, r"\b(turn|switch) (the |her |my |mom's )?(morning )?check-? ?ins? off\b", r"\b(turn|switch) off\b", r"\b(stop|disable|no more)\b"):
+            return Plan("set_check_ins", {"action": "turn_off"})
+        if _has(t, r"\b(resume|restart|start again|back on|unpause)\b"):
+            return Plan("set_check_ins", {"action": "resume"})
+        if _has(t, r"\b(turn|switch) on\b", r"\benable\b"):
+            return Plan("set_check_ins", {"action": "turn_on"})
+        if away or _has(t, r"\bpause\b"):
+            args: dict[str, Any] = {"action": "pause"}
+            until = _after(t, r"\b(till|until|through)\b")
+            if until:
+                args["until"] = until
+            m = re.search(r"\b(staying with [a-z]+|in (the )?hospital|travell?ing|on holiday|visiting [a-z]+)", t)
+            if m:
+                args["reason"] = m.group(1)
+            return Plan("set_check_ins", args)
+        return Plan("get_morning_rhythm", {})
+    if _has(t, r"\b(has|is|was) (mom|mum|she|he|rose) (been )?(up|awake|woken)\b", r"\bup yet\b", r"\bmornings?\b.*\b(been|this week|lately|routine|rhythm)\b", r"\bwoke up\b"):
+        return Plan("get_morning_rhythm", {})
+    # Answering a morning check-in: "I'm fine", "I'm up".
+    if _has(t, r"^ (i'?m|i am) (fine|up|okay|ok|good|alright|all right|awake)\b"):
+        return Plan("log_wellbeing", {"note": text.strip().rstrip(".") or text})
+
     if _has(t, r"\bsend\b.*\bsummary\b", r"\bsummary\b.*\b(send|to the family|to everyone)\b", r"सारांश भेज", r"\bsummary bhej"):
         return Plan("send_daily_summary", {})
 

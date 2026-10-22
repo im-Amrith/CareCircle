@@ -2,6 +2,7 @@
  * Today's care status, shared by the get_care_status tool and the subscribable
  * `carecircle://family/{id}/today` resource. Spoken text follows the caller's language.
  */
+import { checkInAlerts } from './checkins.js';
 import type { Slot } from '../store/types.js';
 import { doseStates, refillAlerts, safetyCheck, supply, type DoseState } from '../domain/care.js';
 import { addDays, spokenDate, spokenTime, toMinutes } from '../domain/time.js';
@@ -262,6 +263,10 @@ export async function todaySnapshot(deps: Deps, caller: Caller) {
     attempted: c.attempted,
     text: voiceCheckSentence(c)
   }));
+
+  // Morning check-in lines, announced like any alert: the question on their own device,
+  // and, only if there was no answer, the heads-up (and later the all-clear) to the family.
+  alerts.push(...(await checkInAlerts(deps, caller)));
 
   return {
     viewer: { id: caller.member.id, name: caller.member.name, role: caller.member.role, language: caller.lang },

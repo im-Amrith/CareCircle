@@ -90,7 +90,7 @@ export interface Today {
 
 export interface FamilyMessage {
   id: string;
-  kind: 'daily_summary';
+  kind: 'daily_summary' | 'check_in';
   date: string;
   title: string;
   text: string;
@@ -103,6 +103,8 @@ export interface FamilyMessage {
 /** Something the device says on its own: a safety alert from the family, or a gentle dose reminder. */
 export interface Announcement extends Speech {
   kind: 'alert' | 'reminder';
+  /** For alerts: a safety red flag, or the morning check-in */
+  category?: 'safety' | 'check_in';
   id: string;
 }
 
@@ -258,6 +260,10 @@ export const remindNow = (profile: ProfileId) => post<{ reminded: boolean; text:
 
 /** set_language over MCP: the person's spoken replies switch language. */
 export const setLanguage = (profile: ProfileId, language: Language) => post<{ language: Language; text: string }>(`/profiles/${profile}/language`, { language });
+
+/** Demo only: moves the frozen clock forward, so a quiet morning's check-in can be shown. */
+export const skipAhead = (by: { minutes: number } | { to: string }) =>
+  post<{ now: string }>(`/clock/advance?${'to' in by ? `to=${by.to}` : `minutes=${by.minutes}`}`);
 
 /** send_daily_summary over MCP, as if the person asked for it. */
 export const sendSummary = (profile: ProfileId) => post<{ text: string }>(`/profiles/${profile}/summary`);

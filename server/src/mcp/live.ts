@@ -16,8 +16,8 @@ const INBOX = /^carecircle:\/\/family\/([^/]+)\/inbox$/;
 
 /** Which changes each resource reflects. */
 const AFFECTS: Record<'today' | 'inbox', ChangeKind[]> = {
-  today: ['dose', 'supply', 'wellbeing', 'order', 'member', 'visit', 'task', 'voice'],
-  inbox: ['message']
+  today: ['dose', 'supply', 'wellbeing', 'order', 'member', 'visit', 'task', 'voice', 'checkin', 'clock'],
+  inbox: ['message', 'clock']
 };
 
 /** Coalesce bursts (a dose log also adjusts the pill count) into one notification. */

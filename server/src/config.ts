@@ -58,11 +58,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
 }
 
-export type Clock = () => Date;
+/** A frozen demo clock can be moved forward ("skip ahead 30 minutes"); a real one can't. */
+export type Clock = (() => Date) & { advance?: (ms: number) => Date };
 
 export function makeClock(fixedNow?: string): Clock {
   if (!fixedNow) return () => new Date();
-  const t = Date.parse(fixedNow);
+  let t = Date.parse(fixedNow);
   if (Number.isNaN(t)) throw new Error(`CARECIRCLE_NOW is not a valid ISO date: ${fixedNow}`);
-  return () => new Date(t);
+  const clock: Clock = () => new Date(t);
+  clock.advance = ms => {
+    t += Math.max(0, ms);
+    return new Date(t);
+  };
+  return clock;
 }

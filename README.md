@@ -164,6 +164,8 @@ Click **Family view** at the top: Rose on a Show 8 on the left, Sam on a Phone o
 | `set_care_preference` | "Mom prefers mornings", "Not on Fridays" | Remembers appointment times of day and days for the whole family, across conversations. `coordinate_appointment` uses them unless a request says otherwise |
 | `log_wellbeing` | "I slept badly", "I had a fall", "मैं रसोई में गिर गई" | Red-flag words (falls, chest pain, breathing trouble, in English or Hindi) return safety guidance and alert the family's devices |
 | `set_language` | "Talk to me in Hindi", "हिंदी में बात करो", "Speak English" | Changes only the caller's own language; the rest of the family keeps theirs |
+| `get_morning_rhythm` | "Has Mom been up this morning?", "How have her mornings been?" | Read-only. When she was first active today against her usual time, and any late or quiet mornings this week |
+| `set_check_ins` | "Mom's staying with me till Sunday", "Turn off the check-ins" | Pause (resumes by itself, at most 30 days), resume, turn on, or turn off (only after a clear yes). Anyone in the family can, including Rose |
 | `send_daily_summary` | "Send everyone today's summary" | Writes the day's summary to the family inbox, and to Amazon SNS when configured. Also sent automatically every evening |
 
 Every tool returns three things:
@@ -257,6 +259,34 @@ In the simulator, each device shows a badge such as "Sam · voice matched" or "N
 | ![Who's speaking form offering Sam, Maya or someone else](docs/screenshots/voice-unsure-picker.jpg) | ![An unrecognised voice is refused](docs/screenshots/voice-unknown-refused.jpg) | ![The evening summary lists the voice check](docs/screenshots/voice-check-digest.jpg) |
 
 ![The … menu's voice match control](docs/screenshots/voice-match-menu.jpg)
+
+### Morning check-ins
+
+Families using Alexa for an older parent told Amazon what they wanted: a heads-up when Mom's
+usual morning activity is late (Care Hub and Alexa Together's activity alerts), trends and
+deviations rather than a raw activity feed (a reviewer's main wish for Alexa Together), and, from one son whose
+mother had died, a way to stop the alerts that kept coming. CareCircle does all three, gently:
+
+1. **Learns the usual morning.** From the past two weeks of what Rose did herself (logging a
+   dose, a note about how she feels, or just talking to CareCircle), it works out when she is
+   usually up and about (8:20 am in the demo data). Someone else logging for her doesn't count.
+2. **Asks her first.** If nothing has come from her 30 minutes past that, her own device asks:
+   "Good morning, Rose. Just checking in… How are you feeling today?" Anything she says answers it.
+3. **Then the family, calmly.** Only if there's still no answer 30 minutes later do Sam and Maya
+   hear about it, on their devices and in the inbox (and Amazon SNS when configured), with the
+   context and a clear line that CareCircle is not an emergency service. When she answers, they
+   get "Good news: Rose answered at 9:30 am."
+4. **Trends, not a feed.** `get_morning_rhythm` says how today compares with her usual time and
+   calls out late or quiet mornings this week. The evening summary includes the morning.
+5. **The family stays in control.** Pause for a stay away or a hospital visit ("till Sunday");
+   check-ins resume by themselves the day after, and a pause can't be longer than 30 days.
+   Turning them off needs a clear yes, and Rose can do it herself.
+
+The server runs the check-in every minute. In the demo the clock is frozen at 9 am, so the
+device menu has **Skip ahead 30 min** and **Skip to the next 8:30 am** (demo only: the server
+route exists only when the clock is frozen). Try: Skip to the next 8:30 am, Skip ahead 30 min
+(Rose's device checks in), Skip ahead 30 min (Sam and Maya are told), then as Rose, "I'm fine, I
+just slept in".
 
 ### Resources and prompts
 

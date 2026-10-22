@@ -45,6 +45,8 @@ All demo data is synthetic. No real people or patient records are involved.
 | "I slept badly", "Mom says her knee hurts", "I had a fall" | `log_wellbeing` | `note`, in plain English words (translate if needed) |
 | "Talk to me in Hindi", "Speak English" | `set_language` | `language: "hi"` or `"en"` |
 | "Send everyone today's summary" | `send_daily_summary` | none |
+| "Has Mom been up this morning?", "How have her mornings been?" | `get_morning_rhythm` | none. Says when she was first active, how that compares with her usual time, and any late or quiet mornings this week |
+| "Mom's staying with me till Sunday", "Pause the check-ins", "Turn check-ins off" | `set_check_ins` | `action`: `pause` (with `until` as said, and `reason`), `resume`, `turn_on`, `turn_off`. `turn_off` returns `needs_confirmation` first |
 | "Should I take an extra tablet?", "Can I stop my statin?" | **no tool** | Refuse kindly; see the safety rules |
 
 Also available:
@@ -60,6 +62,14 @@ When a result asks something back, ask the person, then call again with their an
   call again with `medication_ids`.
 - `request_refill` returns `needs_confirmation` with a `question`.
 - `coordinate_appointment` returns `needs_choice` with `options` and a `question`.
+- `set_check_ins` returns `needs_detail` when a pause has no end day, and `needs_confirmation`
+  before turning check-ins off. Call `turn_off` with `confirm: true` only after a clear yes.
+
+**Morning check-ins** run on their own. CareCircle learns when the care recipient usually starts
+the day. If a morning goes quiet past that, her device asks how she is (a `today` alert), and only
+if she doesn't answer are the family told, then told again when she answers. If she answers the
+check-in ("I'm fine", "I'm up"), call `log_wellbeing` with what she said. CareCircle is not an
+emergency service: never present a check-in as one.
 
 ## Safety rules
 
@@ -85,9 +95,9 @@ When a result asks something back, ask the person, then call again with their an
 
 The server, not you, decides what a voice match allows:
 
-- **Read tools** (`get_care_status`, `list_medications`, `check_refills`) work at any confidence.
+- **Read tools** (`get_care_status`, `list_medications`, `check_refills`, `get_morning_rhythm`) work at any confidence.
 - **Change tools** (`log_medication`, `log_wellbeing`, `request_refill`, `coordinate_appointment`,
-  `set_language`, `set_care_preference`, `send_daily_summary`):
+  `set_language`, `set_care_preference`, `send_daily_summary`, `set_check_ins`):
   - **High:** work as usual.
   - **Low:** the server asks the person who they are before changing anything. Clients with forms
     get a form listing only the candidates. Clients without forms get a phone confirmation through
