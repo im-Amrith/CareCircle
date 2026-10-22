@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import CountUp from './fx/vendor/react-bits/CountUp';
 import { CalendarHeart, Pill } from 'lucide-react';
 import type { Language, ProfileId, Today } from './api';
 import { clock } from './cards/Cards';
@@ -80,6 +81,18 @@ interface Props {
   lang: Language;
 }
 
+/**
+ * A soft light that follows the pointer across the glass widgets (after React Bits' SpotlightCard).
+ * Pure CSS custom properties, so it costs nothing when the pointer is elsewhere.
+ */
+function spotlight(ev: React.PointerEvent<HTMLUListElement>) {
+  for (const li of ev.currentTarget.children) {
+    const r = (li as HTMLElement).getBoundingClientRect();
+    (li as HTMLElement).style.setProperty('--spot-x', `${ev.clientX - r.left}px`);
+    (li as HTMLElement).style.setProperty('--spot-y', `${ev.clientY - r.top}px`);
+  }
+}
+
 export function HomeScreen({ live, lang }: Props) {
   const now = useFamilyClock(live);
   const s = live?.status;
@@ -98,7 +111,7 @@ export function HomeScreen({ live, lang }: Props) {
         <p className="home-date">{dateOf(now, lang)}</p>
       </div>
       {s && (
-        <ul className="widgets" aria-label="Today">
+        <ul className="widgets" aria-label="Today" onPointerMove={spotlight}>
           <li className={`widget${due.length ? ' widget-due' : ''}`}>
             <p className="widget-label">
               <Pill aria-hidden="true" /> {next?.label ?? 'Next dose'}
@@ -118,7 +131,7 @@ export function HomeScreen({ live, lang }: Props) {
             <div>
               <p className="widget-label">Today</p>
               <p className="widget-value">
-                {s.counts?.taken ?? 0} of {s.counts?.total ?? 0}
+                <CountUp to={s.counts?.taken ?? 0} duration={1.1} trigger="load" /> of {s.counts?.total ?? 0}
               </p>
               <p className="widget-meta">doses taken</p>
             </div>

@@ -19,6 +19,9 @@ import {
   type TurnEvent
 } from './api';
 import { AppView } from './AppView';
+import { Backdrop } from './fx/Backdrop';
+import { Hero } from './fx/Hero';
+
 import { ControlBar, ProfileSwitcher, suggestionsFor } from './Controls';
 import { ResultCard } from './cards/Cards';
 import { DeviceView } from './DeviceView';
@@ -38,6 +41,9 @@ import {
 import { ProtocolPanel } from './ProtocolPanel';
 import { TopBar } from './TopBar';
 import { announce, canListen, listenOnce, speak, stopSpeaking } from './voice';
+
+/** Each person's colour, for the living backdrop. Matches --rose, --sam, --maya in styles.css. */
+const TINT: Record<ProfileId, string> = { rose: '#ff7a6b', sam: '#5e9eff', maya: '#b58cff' };
 
 interface ProfileState {
   turns: Turn[];
@@ -483,6 +489,7 @@ export function App() {
 
   return (
     <div className="app">
+      <Backdrop tint={TINT[panes[focus]?.profile ?? panes[0].profile]} />
       <TopBar health={health} />
 
       {banner && (
@@ -499,12 +506,7 @@ export function App() {
 
       <div className="layout">
         <main className={`stage stage-${layout}`}>
-          <header className={`hero${conversing ? ' hero-away' : ''}`} aria-hidden={conversing}>
-            <div className="hero-inner">
-              <h2 className="hero-title">Care, coordinated.</h2>
-              <p className="hero-sub">One family. One care record. Just ask.</p>
-            </div>
-          </header>
+          <Hero away={conversing} />
           <div className={`panes panes-${layout}`}>{shown.map(renderPane)}</div>
         </main>
 
