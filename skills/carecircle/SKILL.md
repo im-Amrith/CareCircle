@@ -24,6 +24,10 @@ All demo data is synthetic. No real people or patient records are involved.
 - **Elicitation:** declare form elicitation (`capabilities.elicitation.form`) if your client can
   show a form. Then the server asks the person directly before ordering or booking anything.
   URL elicitation lets it open the refill checkout page without the link passing through you.
+- **Shared devices:** a device can say how sure it is who is speaking:
+  `X-Speaker-Confidence: high | low | unknown`, plus `X-Speaker-Candidates: sam,maya` with low.
+  The match is simulated in this project, and missing means high. See
+  [Who's speaking](#whos-speaking).
 - **Language:** replies come in the caller's language (English or Hindi). Keep that language
   when you speak. Medicine names stay as they are.
 
@@ -73,6 +77,23 @@ When a result asks something back, ask the person, then call again with their an
 4. **Keep it short.** One or two sentences per reply, no lists, tables or Markdown in speech.
 5. **Respect roles.** Helpers can't order refills or book appointments. If a tool refuses, speak
    its refusal; don't retry as someone else.
+6. **Respect the voice check.** If a tool says it isn't sure who's speaking, or doesn't recognise
+   the voice, speak that as it is. Don't retry, don't change the speaker headers, and don't pick
+   a person on anyone's behalf.
+
+## Who's speaking
+
+The server, not you, decides what a voice match allows:
+
+- **Read tools** (`get_care_status`, `list_medications`, `check_refills`) work at any confidence.
+- **Change tools** (`log_medication`, `log_wellbeing`, `request_refill`, `coordinate_appointment`,
+  `set_language`, `set_care_preference`, `send_daily_summary`):
+  - **High:** work as usual.
+  - **Low:** the server asks the person who they are before changing anything. Clients with forms
+    get a form listing only the candidates. Clients without forms get a phone confirmation through
+    URL elicitation. The change then runs as whoever confirmed, with their role.
+  - **Unknown:** refused (an `isError` result with a spoken apology). The server notes it in the
+    care log and the next family summary. You can still answer questions about Rose.
 
 ## Orders and bookings
 

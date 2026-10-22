@@ -15,7 +15,8 @@ Built for the [Build, Ship, Shape: Amazon Developer Hackathon](https://amazonapp
 | Simulator (`alexa-sim/`): Strands agent on Amazon Bedrock (Nova 2 Lite), Amazon Polly, device frames, live MCP protocol panel | Working, mock and AWS modes |
 | Interactive care dashboard (MCP Apps) | Working |
 | Family features: live updates across devices, safety alerts, Hindi, accessibility, gentle reminders, evening summary (Amazon SNS) | Working |
-| Appointment coordination (Tasks) | Next |
+| Appointment coordination (Tasks), Strands care team, care preferences | Working |
+| Who's speaking? Identity-aware safety on shared devices (simulated voice match, rules enforced by the server) | Working |
 | AWS deployment: AgentCore Runtime, Strands care-team agents | Next |
 
 ## Quick start (no AWS needed)
@@ -229,6 +230,28 @@ The server re-checks every pick. It must be a real open slot that fits the const
 
 The MCP TypeScript SDK 2.3.1 has the task wire types but no task runtime, so `server/src/mcp/tasks.ts` provides one (see the friction log).
 
+### Who's speaking? (shared devices)
+
+An Echo in Rose's kitchen is shared. Rose, Sam, Maya and visitors all talk to it, so CareCircle checks who is speaking before it changes anything.
+
+**The voice match is simulated.** This project has no voice recognition. Each request carries a pretend match, which the simulator sets from its … menu: *Matched*, *Unsure* or *Unknown*. Alexa+ doesn't currently pass a speaker match to MCP servers (see the friction log). **The server enforces the rules**, in front of every tool call (`server/src/mcp/identity.ts`). The model can't skip them, and a prompt can't talk its way past them.
+
+- **How it's sent (dev auth):** next to `Authorization: Bearer dev:<user>`, send `X-Speaker-Confidence: high | low | unknown`. With `low`, also send `X-Speaker-Candidates: sam,maya`, the household members the match was unsure between. No header means `high`, so existing clients keep working.
+- **Read and change tools:**
+  - Reads: `get_care_status`, `list_medications` and `check_refills`.
+  - Changes: `log_medication`, `log_wellbeing`, `request_refill`, `coordinate_appointment`, `set_language`, `set_care_preference` and `send_daily_summary`.
+  - A tool missing from the list counts as a change, and a test fails until it's classified.
+
+| Confidence | Read tools | Change tools |
+| --- | --- | --- |
+| High | Work | Work as usual |
+| Low | Work | Nothing changes until the person says who they are. Clients with forms get "Who's speaking?", offering only the candidates and *Someone else*. Clients without forms get a phone confirmation through URL elicitation: a one-time "Was this you?" page at `/voice-check/<token>`. The change then runs as the person who confirmed, with that person's role |
+| Unknown | Work | Refused politely ("Sorry, I don't recognise this voice, so I can't log Rose's 8 am Metformin…"), recorded in the care log (the live `today` resource) and listed in the next family summary: "Voice check: An unrecognised voice tried to log Rose's 8 am Metformin at 9 am. Nothing was changed." |
+
+When someone logs a dose for someone else, the log records who did it. Sam logging Rose's Metformin stores `loggedBy: "sam"`, and it shows in `log_medication` and `get_care_status` results. If Maya confirms on Sam's device, the log says Maya.
+
+In the simulator, each device shows a badge such as "Sam · voice matched" or "Not sure who's speaking". The … menu sets the match for the next request only. Mock and Bedrock modes both work unchanged, because the rules live on the server.
+
 ### Resources and prompts
 
 - `carecircle://family/{familyId}/care-plan`: the care plan as Markdown
@@ -285,7 +308,7 @@ If SNS fails, the message still reaches the inbox and the failure is recorded on
 | `AWS_REGION` | SDK default | Region for SNS |
 | `CARECIRCLE_PLANNER_URL` | unset | The orchestrator's care team endpoint for appointment planning, e.g. `http://127.0.0.1:8100/plan/appointment` (`npm run sim` sets it). Unset = rank locally |
 
-Dev auth (`Bearer dev:<userId>`) is for local use only. The AWS deployment replaces it with Cognito JWTs validated by AgentCore Runtime.
+Dev auth (`Bearer dev:<userId>`, plus the simulated `X-Speaker-Confidence` and `X-Speaker-Candidates` headers) is for local use only. The AWS deployment replaces it with Cognito JWTs validated by AgentCore Runtime.
 
 ## Repository layout
 
@@ -294,7 +317,7 @@ server/                 MCP server (TypeScript, MCP SDK v2)
   src/domain/           Pure care logic: dose status, refills and refill orders, name matching, safety words
   src/store/            Storage interface, in-memory store, seed loader
   src/mcp/              Tools, resources, prompts, server factory
-  src/http/             Streamable HTTP app, dev auth, event store, refill checkout page
+  src/http/             Streamable HTTP app, dev auth, event store, refill checkout and voice-check pages
   test/                 Unit, MCP and transport conformance tests
 seed/rose.json          Synthetic demo family (dates relative to today)
 mcp.config.json         Client config pointing at the local server
