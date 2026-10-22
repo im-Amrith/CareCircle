@@ -73,7 +73,7 @@ def rank(brief: dict[str, Any]) -> list[dict[str, Any]]:
         driver = (s.get("drivers") or [None])[0]
         part = "morning" if _minutes(s["time"]) < 12 * 60 else "afternoon"
         if driver:
-            reason = f"{'Earliest slot that fits, and ' if i == 0 else ''}{driver['name']} is free {s['day']} {part}."
+            reason = f"{'Earliest slot with a driver, and ' if i == 0 else ''}{driver['name']} is free {s['day']} {part}."
         else:
             reason = f"No one in the family is free then, so a taxi, about {brief.get('travelMinutes', 25)} minutes each way."
         picks.append({"slotId": s["id"], "driverId": driver["id"] if driver else None, "reason": reason[0].upper() + reason[1:]})
@@ -202,8 +202,8 @@ ROLES = {
         "You are the planner. Call candidates: it lists every slot that fits, already in the family's order of "
         "preference (a family member driving first, then earliest). Choose up to {max}, keeping that order unless "
         "your team's notes give a clear reason to change it. Use only slot ids and driver ids from candidates, and "
-        "only a driver listed for that slot (null for a taxi). Give each a true one-line reason; never call a slot "
-        "the earliest unless no fitting slot is earlier. Reply with JSON only, no prose: "
+        "only a driver listed for that slot (null for a taxi). Give each a true one-line reason; call the first "
+        "pick the earliest slot with a driver, never just the earliest, unless no fitting slot is earlier. Reply with JSON only, no prose: "
         '{{"options": [{{"slotId": "...", "driverId": "maya or null", "reason": "one short sentence"}}]}}'
     ),
 }

@@ -53,7 +53,7 @@ describe('appointment planning (mock services, deterministic planner)', () => {
     ]);
     for (const o of options) expect(Number(o.time.slice(0, 2))).toBeLessThan(12);
     expect(options[0]).toMatchObject({ date: '2026-10-13', leaveAt: '10:05', clinic: 'Riverside Heart Clinic', driver: { id: 'maya' } });
-    expect(options[0].reason).toMatch(/Maya is free Tuesday morning/);
+    expect(options[0].reason).toBe('Earliest slot with a driver, and Maya is free Tuesday morning.');
   });
 
   it('falls back to a taxi when no one can drive', async () => {

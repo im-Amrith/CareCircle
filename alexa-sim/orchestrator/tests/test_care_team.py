@@ -58,7 +58,7 @@ def test_mock_planner_returns_three_morning_options_from_the_graph(sim: str) -> 
         ("2026-10-15T11:30", "maya"),
     ]
     assert all(int(o["slotId"][11:13]) < 12 for o in body["options"])
-    assert body["options"][0]["reason"] == "Earliest slot that fits, and Maya is free Tuesday morning."
+    assert body["options"][0]["reason"] == "Earliest slot with a driver, and Maya is free Tuesday morning."
     # Every agent ran: the coordinator first, the three specialists, then the planner.
     order = [t["node"] for t in body["trace"]]
     assert order[0] == "coordinator" and order[-1] == "planner"

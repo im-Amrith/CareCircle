@@ -332,8 +332,8 @@ happens, not reconstructed at the end.
     The planner gets `candidates`, already in the family's order. After that change, one run gave
     the correct 6 slots and the correct top three in about 8.7 seconds.
   - The MCP server still re-checks every pick against the facts and falls back to its own ranking.
-  - Remaining nit: the top option's reason says "earliest slot" where "earliest slot with a
-    driver" is meant.
+  - The top option's reason said "earliest slot" where "earliest slot with a driver" was meant.
+    Fixed in the deterministic wording and in the planner's prompt.
 - **Suggestion:** Show this grounding pattern in the Strands multi-agent samples: the shared facts
   go in `invocation_state`, nodes read them through tools, and the model reasons. Today the
   examples pass data through the task text. A Bedrock note on Nova 2 Lite's reliability when

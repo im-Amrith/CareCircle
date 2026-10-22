@@ -237,7 +237,7 @@ export function rankLocally(facts: PlanFacts, req: PlanRequest): AppointmentOpti
     const driver = entry.drivers[0] ?? null;
     const day = LONG_DAY[weekdayOf(entry.slot.date)];
     const reason = driver
-      ? `${i === 0 ? 'Earliest slot that fits, and ' : ''}${driver.name} is free ${day} ${toMinutes(entry.slot.time) < 12 * 60 ? 'morning' : 'afternoon'}.`
+      ? `${i === 0 ? 'Earliest slot with a driver, and ' : ''}${driver.name} is free ${day} ${toMinutes(entry.slot.time) < 12 * 60 ? 'morning' : 'afternoon'}.`
       : `No one in the family is free then, so a taxi, about ${facts.travelMinutes} minutes each way.`;
     return buildOption(facts, entry, driver, i + 1, reason[0].toUpperCase() + reason.slice(1));
   });
