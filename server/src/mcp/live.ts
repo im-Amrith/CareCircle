@@ -16,7 +16,7 @@ const INBOX = /^carecircle:\/\/family\/([^/]+)\/inbox$/;
 
 /** Which changes each resource reflects. */
 const AFFECTS: Record<'today' | 'inbox', ChangeKind[]> = {
-  today: ['dose', 'supply', 'wellbeing', 'order', 'member', 'visit', 'task'],
+  today: ['dose', 'supply', 'wellbeing', 'order', 'member', 'visit', 'task', 'voice'],
   inbox: ['message']
 };
 

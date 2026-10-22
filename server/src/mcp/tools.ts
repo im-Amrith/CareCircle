@@ -25,7 +25,8 @@ const DoseOut = z.object({
   time: z.string().describe('HH:MM in the family timezone'),
   pills: z.number(),
   status: z.enum(['taken', 'skipped', 'due', 'upcoming', 'missed']),
-  loggedAt: z.string().optional()
+  loggedAt: z.string().optional(),
+  loggedBy: z.string().optional().describe('Member id of who logged it, e.g. sam when Sam logged the dose')
 });
 
 const SupplyOut = z.object({
@@ -208,7 +209,9 @@ export function registerTools(server: McpServer, deps: Deps): void {
       outputSchema: z.object({
         result: z.enum(['logged', 'already_logged', 'needs_clarification', 'nothing_due', 'not_found']),
         date: z.string(),
-        logged: z.array(z.object({ medicationId: z.string(), name: z.string(), slot: SlotEnum, status: z.enum(['taken', 'skipped']), at: z.string() })),
+        logged: z.array(
+          z.object({ medicationId: z.string(), name: z.string(), slot: SlotEnum, status: z.enum(['taken', 'skipped']), at: z.string(), loggedBy: z.string().describe('Member id of who logged it') })
+        ),
         alreadyLogged: z.array(z.object({ medicationId: z.string(), name: z.string(), slot: SlotEnum })),
         options: z.array(z.object({ id: z.string(), name: z.string(), purpose: z.string() })),
         nextDose: DoseOut.nullable()
@@ -272,7 +275,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
 
       // 2. For each medicine, pick the dose slot this refers to.
       const at = taken_at ? new Date(taken_at) : caller.now;
-      const logged: { medicationId: string; name: string; slot: Slot; status: 'taken' | 'skipped'; at: string }[] = [];
+      const logged: { medicationId: string; name: string; slot: Slot; status: 'taken' | 'skipped'; at: string; loggedBy: string }[] = [];
       const alreadyLogged: { medicationId: string; name: string; slot: Slot }[] = [];
       for (const med of targets) {
         const own = states.filter(s => s.medicationId === med.id);
@@ -300,7 +303,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
         };
         await deps.store.addDoseLog(log);
         if (status === 'taken') await deps.store.adjustPills(caller.family.id, med.id, -pick.pills);
-        logged.push({ medicationId: med.id, name: med.name, slot: pick.slot, status, at: log.at });
+        logged.push({ medicationId: med.id, name: med.name, slot: pick.slot, status, at: log.at, loggedBy: log.loggedBy });
       }
 
       const after = (await todayContext(deps, caller, day)).states;

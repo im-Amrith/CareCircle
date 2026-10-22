@@ -3,12 +3,13 @@
  * Sent by the scheduler at the family's digest time, or on request with send_daily_summary.
  */
 import type { FamilyMessage } from '../store/types.js';
-import { localParts, spokenTime } from '../domain/time.js';
+import { addDays, localParts, spokenTime } from '../domain/time.js';
 import { listJoin, plural } from '../domain/speech.js';
 import { callerFor, type Caller, type Deps } from '../mcp/context.js';
 import { careStatus } from '../mcp/status.js';
 import { orderSentence, openOrders } from '../mcp/refills.js';
 import { safetyCheck } from '../domain/care.js';
+import { voiceCheckSentence } from '../mcp/identity.js';
 
 export const DEFAULT_DIGEST_TIME = '20:30';
 
@@ -48,6 +49,13 @@ export async function composeDigest(deps: Deps, caller: Caller, date: string): P
   }
   if (s.visits.length) lines.push(`Visits: ${listJoin(s.visits.map(v => `${v.who} at ${spokenTime(v.time)}`))}.`);
   if (s.missedLast7Days) lines.push(`Past 7 days: ${plural(s.missedLast7Days, 'dose')} missed.`);
+
+  // Changes refused because CareCircle couldn't tell who was speaking, since the last summary.
+  const lastSummary = (await deps.store.listMessages(caller.family.id, 50)).find(m => m.kind === 'daily_summary');
+  const checks = (await deps.store.listVoiceChecks(caller.family.id, addDays(date, -7), date))
+    .filter(c => !lastSummary || c.at > lastSummary.sentAt)
+    .sort((a, b) => a.at.localeCompare(b.at));
+  for (const c of checks) lines.push(`Voice check: ${voiceCheckSentence(c)}`);
 
   const title = `${name}'s day: ${dayLabel(date)}`;
   const text = [title, '', ...lines, '', 'CareCircle coordinates care. It does not give medical advice.'].join('\n');

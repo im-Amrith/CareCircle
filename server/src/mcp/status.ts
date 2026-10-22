@@ -9,6 +9,7 @@ import { countWord, greeting, listJoin, plural, sentences } from '../domain/spee
 import { dateHi, listJoinHi, REASON_HI, SLOT_HI, timeHi, willComeHi } from '../domain/hindi.js';
 import { openOrders, orderOut, orderSentence } from './refills.js';
 import { subject, type Caller, type Deps } from './context.js';
+import { voiceCheckSentence } from './identity.js';
 
 export function doseOut(d: DoseState) {
   return {
@@ -19,7 +20,8 @@ export function doseOut(d: DoseState) {
     time: d.time,
     pills: d.pills,
     status: d.status,
-    ...(d.loggedAt ? { loggedAt: d.loggedAt } : {})
+    ...(d.loggedAt ? { loggedAt: d.loggedAt } : {}),
+    ...(d.loggedBy ? { loggedBy: d.loggedBy } : {})
   };
 }
 
@@ -252,11 +254,21 @@ export async function todaySnapshot(deps: Deps, caller: Caller) {
     }
   }
 
+  // The care log's record of changes refused because the voice wasn't recognised.
+  const voiceChecks = (await deps.store.listVoiceChecks(caller.family.id, day, day)).map(c => ({
+    id: c.id,
+    time: c.time,
+    device: nameOf(c.device),
+    attempted: c.attempted,
+    text: voiceCheckSentence(c)
+  }));
+
   return {
     viewer: { id: caller.member.id, name: caller.member.name, role: caller.member.role, language: caller.lang },
     status: status.structured,
     speech: status.speech,
     alerts,
+    voiceChecks,
     reminder,
     updatedAt: caller.now.toISOString()
   };
