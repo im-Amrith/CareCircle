@@ -149,7 +149,8 @@ export function parseConstraints(...texts: (string | undefined)[]): Constraints 
   const excluded = new Set<number>();
   for (const [i, name] of WEEKDAY_NAMES.entries()) {
     if (!new RegExp(`\\b${name}s?\\b`).test(t)) continue;
-    if (new RegExp(`\\b(not|except|no)\\s+(on\\s+)?${name}`).test(t)) excluded.add(i);
+    // "not Friday", "not on Fridays", "would rather not go on Thursdays", "never Mondays", "avoid Monday"
+    if (new RegExp(`\\b(not|except|no|never|avoid|can't|cannot)\\b(\\s+[a-z']+){0,3}?\\s+${name}`).test(t)) excluded.add(i);
     else out.weekdays.push(i);
   }
   if (excluded.size) {

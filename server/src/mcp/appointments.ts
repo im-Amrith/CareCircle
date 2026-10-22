@@ -5,7 +5,6 @@ import {
   LocalPlanner,
   dayName,
   mockAppointmentServices,
-  parseConstraints,
   parseWindow,
   type AppointmentOption,
   type AppointmentPlanner,
@@ -16,6 +15,7 @@ import { listJoin, plural, sentences } from '../domain/speech.js';
 import { uiMeta } from './apps.js';
 import { CareError, guarded, ok, requireRole, resolveCaller, type Caller, type Deps } from './context.js';
 import { TaskCancelled, installTasks, type TaskHandle } from './tasks.js';
+import { withPreferences } from './preferences.js';
 
 /** Options shown to the person stay valid for a voice "yes" this long. */
 export const OPTIONS_VALID_MINUTES = 30;
@@ -153,7 +153,8 @@ export async function coordinateAppointment(deps: Deps, caller: Caller, args: Ar
   requireRole(caller, ['recipient', 'coordinator'], 'book appointments');
   const members = await deps.store.listMembers(caller.family.id);
   const window = parseWindow(args.window, caller.local.date);
-  const constraints = parseConstraints(args.constraints);
+  // What the person asked for wins; stored preferences ("Mom prefers mornings") fill the gaps.
+  const { constraints, used } = await withPreferences(deps, caller, args.constraints);
   const recipient = caller.recipient.name;
   const whose = caller.isRecipient ? 'your' : `${recipient}'s`;
 
@@ -169,7 +170,8 @@ export async function coordinateAppointment(deps: Deps, caller: Caller, args: Ar
     step => hooks.step(step)
   );
   const base = { options: options.map(optionOut) };
-  const wanted = constraints.understood.length ? `, ${listJoin(constraints.understood)}` : '';
+  const prefers = used.length ? `, as ${caller.isRecipient ? 'you prefer' : `${recipient} prefers`}` : '';
+  const wanted = constraints.understood.length ? `, ${listJoin(constraints.understood)}${prefers}` : '';
   if (options.length === 0) {
     return ok({ ...base, result: 'no_options' as const }, `I couldn't find a ${args.specialty} slot ${window.label}${wanted}. Should I look at a different week?`);
   }

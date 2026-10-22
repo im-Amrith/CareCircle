@@ -147,6 +147,21 @@ export interface RefillOrder {
   cancelledAt?: string;
 }
 
+/** What a stored care preference is about. */
+export type PreferenceKey = 'appointment_time' | 'appointment_days';
+
+/** Something the family wants remembered, e.g. "Mom prefers mornings". One per key. */
+export interface CarePreference {
+  familyId: string;
+  key: PreferenceKey;
+  /** Normalised, e.g. "mornings", "not Friday" */
+  value: string;
+  /** The words as said, e.g. "Mom prefers mornings" */
+  said: string;
+  setBy: string;
+  setAt: string;
+}
+
 /** A message CareCircle sent to the family, e.g. the evening summary. */
 export interface FamilyMessage {
   id: string;
@@ -194,6 +209,11 @@ export interface CareStore {
    * updated order, or undefined if it had already moved on.
    */
   transitionOrder(orderId: string, from: OrderStatus, patch: Partial<RefillOrder> & { status: OrderStatus }): Promise<RefillOrder | undefined>;
+  listPreferences(familyId: string): Promise<CarePreference[]>;
+  /** Replaces any preference with the same key */
+  setPreference(preference: CarePreference): Promise<void>;
+  /** Returns whether there was one to remove */
+  removePreference(familyId: string, key: PreferenceKey): Promise<boolean>;
   addMessage(message: FamilyMessage): Promise<void>;
   /** Newest first */
   listMessages(familyId: string, limit?: number): Promise<FamilyMessage[]>;

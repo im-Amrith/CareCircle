@@ -163,3 +163,13 @@ def test_line5_sam_books_a_cardiology_follow_up_and_a_ride(sim: str) -> None:
 
     # It shows up for the family, and Maya hears she's driving.
     assert "You're driving." in speech(turn(sim, "maya", "How is Mom today?"))
+
+
+def test_router_sends_preferences_and_bookings_to_the_right_tools() -> None:
+    assert route("Mom prefers mornings", None).tool == "set_care_preference"
+    assert route("Mom prefers mornings", None).arguments == {"preference": "Mom prefers mornings"}
+    assert route("Forget Mom's appointment preferences", None).arguments["forget"] is True
+    book = route("Book Mom's cardiology follow-up next week, mornings only, and sort out a ride.", None)
+    assert (book.tool, book.arguments["specialty"]) == ("coordinate_appointment", "cardiology follow-up")
+    # Still the medication schedule, not a booking.
+    assert route("What's her schedule tonight?", None).tool == "list_medications"

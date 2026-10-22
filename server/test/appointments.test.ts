@@ -35,6 +35,12 @@ describe('appointment planning (mock services, deterministic planner)', () => {
     expect(parseWindow('next week', TODAY)).toMatchObject({ from: '2026-10-12', to: '2026-10-18' });
     expect(parseConstraints('mornings only')).toMatchObject({ latest: '11:59', understood: ['mornings'] });
     expect(parseConstraints('afternoons, not Friday').weekdays).toEqual([1, 2, 3, 4]);
+    // A "not" a few words before the day still excludes it, rather than turning into "only".
+    expect(parseConstraints('she would rather not go on Thursdays').weekdays).toEqual([1, 2, 3, 5]);
+    expect(parseConstraints('never Mondays').weekdays).toEqual([2, 3, 4, 5]);
+    expect(parseConstraints('Tuesday or Thursday').weekdays).toEqual([2, 4]);
+    // Words between a "not" and the day don't reach across to an unrelated day.
+    expect(parseConstraints("not too early, and Tuesday is best").weekdays).toEqual([2]);
   });
 
   it('returns three morning options, with Maya driving, best first', async () => {

@@ -37,6 +37,7 @@ All demo data is synthetic. No real people or patient records are involved.
 | "Is she running low on anything?" | `check_refills` | none |
 | "Reorder her blood pressure tablets", "Yes" after a low-supply warning | `request_refill` | `spoken_name` as said; see [Orders and bookings](#orders-and-bookings) |
 | "Book Mom's cardiology follow-up next week, mornings only, and sort out a ride" | `coordinate_appointment` | `specialty`, `window`, `constraints`; see below |
+| "Mom prefers mornings", "Not on Fridays" | `set_care_preference` | `preference` as said; `forget: true` to drop it. Remembered for the whole family and used by `coordinate_appointment` |
 | "I slept badly", "Mom says her knee hurts", "I had a fall" | `log_wellbeing` | `note`, in plain English words (translate if needed) |
 | "Talk to me in Hindi", "Speak English" | `set_language` | `language: "hi"` or `"en"` |
 | "Send everyone today's summary" | `send_daily_summary` | none |

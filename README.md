@@ -160,6 +160,7 @@ Click **Family view** at the top: Rose on a Show 8 on the left, Sam on a Phone o
 | `check_refills` | "Am I running low on anything?" | Read-only. Days of supply left, when each runs out, and any refill already on its way |
 | `request_refill` | "Reorder my blood pressure tablets", "Yes" after a low-supply warning | Asks first, then opens a one-time checkout link. Nothing is ordered until checkout is completed. Asking twice never orders twice |
 | `coordinate_appointment` | "Book Mom's cardiology follow-up next week, mornings only, and sort out a ride" | Checks the clinic, family calendars and travel time, offers up to three ranked options, and books only the one the person picks. Can run as an MCP Task |
+| `set_care_preference` | "Mom prefers mornings", "Not on Fridays" | Remembers appointment times of day and days for the whole family, across conversations. `coordinate_appointment` uses them unless a request says otherwise |
 | `log_wellbeing` | "I slept badly", "I had a fall", "मैं रसोई में गिर गई" | Red-flag words (falls, chest pain, breathing trouble, in English or Hindi) return safety guidance and alert the family's devices |
 | `set_language` | "Talk to me in Hindi", "हिंदी में बात करो", "Speak English" | Changes only the caller's own language; the rest of the family keeps theirs |
 | `send_daily_summary` | "Send everyone today's summary" | Writes the day's summary to the family inbox, and to Amazon SNS when configured. Also sent automatically every evening |
@@ -203,6 +204,8 @@ How the checkout is secured:
 - `tasks/get`, `tasks/result`, `tasks/list` and `tasks/cancel` are supported. Cancelling while it waits for a pick books nothing.
 - Tasks belong to the member who started them.
 - Without a `task` param, the tool runs synchronously and sends `notifications/progress` with the same steps.
+
+**Preferences.** When someone says "Mom prefers mornings" or "not on Fridays", `set_care_preference` stores it on the family. It's kept server-side, so it applies to any family member's next conversation. The next booking uses it when the request doesn't say otherwise, and says so: "…mornings, as Rose prefers". Whatever is asked this time wins. "Forget Mom's appointment preferences" clears them. Here they live in the server's store. In production, AgentCore Memory is the natural home for them (long-term memory per family), behind the same store interface. That isn't deployed in this project.
 
 The MCP TypeScript SDK 2.3.1 has the task wire types but no task runtime, so `server/src/mcp/tasks.ts` provides one (see the friction log).
 

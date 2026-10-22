@@ -25,6 +25,7 @@ describe('MCP surface', () => {
       'log_wellbeing',
       'request_refill',
       'send_daily_summary',
+      'set_care_preference',
       'set_language'
     ]);
     for (const t of tools) {

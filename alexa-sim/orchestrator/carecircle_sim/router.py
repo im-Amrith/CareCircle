@@ -146,6 +146,10 @@ def route(text: str, last: LastResult | None, lang: str = "en") -> Plan:
     if _has(t, r"\bsend\b.*\bsummary\b", r"\bsummary\b.*\b(send|to the family|to everyone)\b", r"सारांश भेज", r"\bsummary bhej"):
         return Plan("send_daily_summary", {})
 
+    # "Mom prefers mornings", "Remember she can't do Fridays", "Forget Mom's appointment preferences".
+    if _has(t, r"\b(prefers?|preferences?|would rather|likes? (her |his |my )?appointments)\b", r"\bremember (that )?(she|he|mom|mum|i)\b"):
+        return Plan("set_care_preference", {"preference": text.strip(), **({"forget": True} if _has(t, r"\bforget\b") else {})})
+
     # "Book Mom's cardiology follow-up next week, mornings only, and sort out a ride."
     if _has(t, r"\b(book|make|arrange|set up|get)\b.*\b(appointment|follow-?up|check-?up|cardiology|cardiologist)\b"):
         m = re.search(r"\b(cardiology|cardiologist|heart|[a-z]+ology)\b", t)
