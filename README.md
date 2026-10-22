@@ -196,6 +196,26 @@ How the checkout is secured:
 2. **Pick.** Clients with form elicitation get a slot picker. Declining books nothing. As with refills, `confirm: true` from the model never skips the picker. Voice-only clients get `needs_choice` with the options read aloud. To book, they call again with `option_id` and `confirm: true` after a clear yes. The server only accepts an option it read out to that family in the last 30 minutes.
 3. **Book.** The appointment shows in `get_care_status` ("Cardiology follow-up with Dr Rao on Tuesday at 10:30 am. Maya is driving.") and on family screens. The driver also gets a helper task, for example "Drive Rose to Riverside Heart Clinic" at 10:05 am. Booking the same slot twice never doubles up.
 
+**Who ranks the options: a Strands care team.** In the simulator, the server asks the orchestrator's care team, a Strands Agents multi-agent Graph:
+
+```text
+coordinator --+--> clinic ------+
+              +--> calendar ----+--> planner
+              +--> transport ---+
+```
+
+- The **coordinator** restates the request and preferences.
+- **Clinic**, **family calendar** and **transport** run in parallel. Each reads its part of the facts through a tool.
+- The **planner** picks up to three options with a one-line reason each.
+- The server sends the facts as a brief to `POST /plan/appointment`. It keeps the task, the picker and the booking itself.
+
+The two modes:
+
+- **AWS mode:** each node is an Agent on Amazon Bedrock (`global.amazon.nova-2-lite-v1:0` in `ap-southeast-2`). One plan took about 9 seconds in testing, with the three specialists overlapping.
+- **Mock mode,** and the fallback when Bedrock fails: the same Graph runs with deterministic nodes, so the same request always gets the same three options and judges can run it without AWS.
+
+The server re-checks every pick. It must be a real open slot that fits the constraints, with a driver who is actually free. Anything else is dropped and topped up from the server's own ranking. If the care team is unreachable, the server ranks locally. `structuredContent.plannedBy` shows which one ranked the options, for example `strands-graph:bedrock:global.amazon.nova-2-lite-v1:0`, `strands-graph:deterministic` or `local`.
+
 **MCP Tasks (2025-11-25, experimental).** The tool is listed with `execution.taskSupport: "optional"`, and the server advertises `capabilities.tasks`.
 
 - A `tools/call` with a `task` param returns a task handle at once.
@@ -263,6 +283,7 @@ If SNS fails, the message still reaches the inbox and the failure is recorded on
 | `DIGEST_TIME` | `20:30` | Family-local time for the evening summary; `off` disables the scheduler |
 | `SNS_TOPIC_ARN` | unset | Amazon SNS topic for the evening summary. Unset = in-app inbox only |
 | `AWS_REGION` | SDK default | Region for SNS |
+| `CARECIRCLE_PLANNER_URL` | unset | The orchestrator's care team endpoint for appointment planning, e.g. `http://127.0.0.1:8100/plan/appointment` (`npm run sim` sets it). Unset = rank locally |
 
 Dev auth (`Bearer dev:<userId>`) is for local use only. The AWS deployment replaces it with Cognito JWTs validated by AgentCore Runtime.
 
@@ -277,7 +298,7 @@ server/                 MCP server (TypeScript, MCP SDK v2)
   test/                 Unit, MCP and transport conformance tests
 seed/rose.json          Synthetic demo family (dates relative to today)
 mcp.config.json         Client config pointing at the local server
-alexa-sim/orchestrator/ Simulator brain (Python): MCP client, Strands agent on Bedrock, Polly, SSE API
+alexa-sim/orchestrator/ Simulator brain (Python): MCP client, Strands agent on Bedrock, the appointment care team (Strands Graph), Polly, SSE API
 alexa-sim/web/          Simulator UI (React + Vite): device frames, cards, elicitation, protocol panel
 scripts/                Cross-platform setup and launcher (npm run setup / sim)
 skills/carecircle/      Agent Skill: how any agent should use the CareCircle server

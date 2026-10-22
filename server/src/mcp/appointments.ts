@@ -73,6 +73,7 @@ type Args = z.infer<typeof InputSchema>;
 const OutputSchema = z.object({
   result: z.enum(['booked', 'needs_choice', 'declined', 'already_booked', 'no_options']),
   options: z.array(OptionOut),
+  plannedBy: z.string().optional().describe('Who ranked the options: "local", or the care team engine, e.g. "strands-graph:bedrock:<model>"'),
   question: z.string().optional().describe('When result is needs_choice: ask this, then call again with option_id and confirm true after a clear yes'),
   appointment: AppointmentOut.optional(),
   helperTask: HelperTaskOut.optional()
@@ -169,7 +170,7 @@ export async function coordinateAppointment(deps: Deps, caller: Caller, args: Ar
     },
     step => hooks.step(step)
   );
-  const base = { options: options.map(optionOut) };
+  const base = { options: options.map(optionOut), ...(options[0] ? { plannedBy: options[0].plannedBy } : {}) };
   const prefers = used.length ? `, as ${caller.isRecipient ? 'you prefer' : `${recipient} prefers`}` : '';
   const wanted = constraints.understood.length ? `, ${listJoin(constraints.understood)}${prefers}` : '';
   if (options.length === 0) {

@@ -12,6 +12,8 @@ import { checkoutRouter } from './checkout.js';
 import { ChangeHub, watchStore } from '../store/changes.js';
 import { createNotifier, snsPublisher } from '../notify/notifier.js';
 import { runDigestSchedule } from '../notify/digest.js';
+import { mockAppointmentServices } from '../domain/appointments.js';
+import { RemotePlanner } from '../domain/remote-planner.js';
 
 interface Session {
   transport: NodeStreamableHTTPServerTransport;
@@ -41,7 +43,9 @@ export function createHttpApp(config: Config, baseDeps: Deps) {
     changes,
     notifier: baseDeps.notifier ?? createNotifier(store, config.snsTopicArn ? snsPublisher(config.snsTopicArn, config.awsRegion) : undefined),
     publicUrl: baseDeps.publicUrl ?? config.publicUrl,
-    checkoutWatchers: baseDeps.checkoutWatchers ?? new Map()
+    checkoutWatchers: baseDeps.checkoutWatchers ?? new Map(),
+    // Appointment planning by the orchestrator's Strands care team when configured; locally otherwise.
+    appointmentPlanner: baseDeps.appointmentPlanner ?? (config.plannerUrl ? new RemotePlanner(mockAppointmentServices(), config.plannerUrl) : undefined)
   };
   const app = createMcpExpressApp({
     host: config.host,

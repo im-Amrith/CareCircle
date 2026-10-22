@@ -92,6 +92,8 @@ export interface AppointmentOption {
   label: string;
   /** One line on why this option ranks where it does */
   reason: string;
+  /** Who ranked it: "local", or the care team's engine, e.g. "strands-graph:deterministic" */
+  plannedBy: string;
 }
 
 /** The planning steps, in order. Status messages and the UI task card follow these. */
@@ -162,65 +164,94 @@ export function parseConstraints(...texts: (string | undefined)[]): Constraints 
   return out;
 }
 
-/* ---------- The deterministic planner (mock mode, and the fallback) ---------- */
+/* ---------- Facts, and the deterministic planner (mock mode, and the fallback) ---------- */
 
-/**
- * Same inputs, same three options, every time: judges can run the demo without AWS.
- * Ranking: a family member driving beats a taxi; then earliest first.
- */
+/** Everything a planner ranks: the clinic, its open slots in the window, who can drive to each, travel time. */
+export interface PlanFacts {
+  clinic: Clinic;
+  travelMinutes: number;
+  slots: { id: string; slot: ClinicSlot; leaveAt: string; drivers: { id: string; name: string }[] }[];
+}
+
+export function fitsConstraints(slot: ClinicSlot, c: Constraints): boolean {
+  return (
+    toMinutes(slot.time) >= toMinutes(c.earliest) &&
+    toMinutes(slot.time) <= toMinutes(c.latest) &&
+    (c.weekdays.length === 0 || c.weekdays.includes(weekdayOf(slot.date)))
+  );
+}
+
+/** Asks the clinic, the family calendar and the travel service. Undefined if no clinic does this specialty. */
+export async function gatherFacts(services: AppointmentServices, req: PlanRequest, onStep?: (step: PlanStep) => void): Promise<PlanFacts | undefined> {
+  onStep?.('clinic');
+  const clinic = await services.clinics.clinicFor(req.specialty);
+  if (!clinic) return undefined;
+  const open = await services.clinics.openSlots(clinic.id, req.window.from, req.window.to);
+  onStep?.('calendar');
+  onStep?.('transport');
+  const travelMinutes = await services.travel.minutes(req.familyId, clinic.id);
+  const nameOf = (id: string) => req.members.find(m => m.id === id)?.name ?? id;
+  const slots = await Promise.all(
+    open.map(async slot => {
+      const leaveAt = shiftTime(slot.time, -travelMinutes);
+      const backAt = shiftTime(slot.time, VISIT_MINUTES + travelMinutes);
+      const drivers = await services.calendar.freeDrivers(req.familyId, slot.date, leaveAt, backAt);
+      return { id: `${slot.date}T${slot.time}-${clinic.id}-${slug(slot.doctor)}`, slot, leaveAt, drivers: drivers.map(id => ({ id, name: nameOf(id) })) };
+    })
+  );
+  return { clinic, travelMinutes, slots };
+}
+
+export function buildOption(
+  facts: PlanFacts,
+  entry: PlanFacts['slots'][number],
+  driver: { id: string; name: string } | null,
+  rank: number,
+  reason: string,
+  plannedBy = 'local'
+): AppointmentOption {
+  const { slot } = entry;
+  return {
+    id: `${entry.id}-${driver?.id ?? 'taxi'}`,
+    rank,
+    date: slot.date,
+    time: slot.time,
+    clinicId: facts.clinic.id,
+    clinic: facts.clinic.name,
+    specialty: facts.clinic.specialty,
+    doctor: slot.doctor,
+    driver,
+    leaveAt: entry.leaveAt,
+    travelMinutes: facts.travelMinutes,
+    label: `${SHORT_DAY[weekdayOf(slot.date)]} ${spokenTime(slot.time)} with ${slot.doctor}, ${driver ? `${driver.name} drives` : 'taxi'}`,
+    reason,
+    plannedBy
+  };
+}
+
+/** A family member driving beats a taxi; then earliest first. */
+export function rankLocally(facts: PlanFacts, req: PlanRequest): AppointmentOption[] {
+  const fitting = facts.slots.filter(e => fitsConstraints(e.slot, req.constraints));
+  fitting.sort((a, b) => Number(!a.drivers.length) - Number(!b.drivers.length) || (a.slot.date + a.slot.time).localeCompare(b.slot.date + b.slot.time));
+  return fitting.slice(0, MAX_OPTIONS).map((entry, i) => {
+    const driver = entry.drivers[0] ?? null;
+    const day = LONG_DAY[weekdayOf(entry.slot.date)];
+    const reason = driver
+      ? `${i === 0 ? 'Earliest slot that fits, and ' : ''}${driver.name} is free ${day} ${toMinutes(entry.slot.time) < 12 * 60 ? 'morning' : 'afternoon'}.`
+      : `No one in the family is free then, so a taxi, about ${facts.travelMinutes} minutes each way.`;
+    return buildOption(facts, entry, driver, i + 1, reason[0].toUpperCase() + reason.slice(1));
+  });
+}
+
+/** Same inputs, same three options, every time: judges can run the demo without AWS. */
 export class LocalPlanner implements AppointmentPlanner {
   constructor(private services: AppointmentServices) {}
 
   async plan(req: PlanRequest, onStep?: (step: PlanStep) => void): Promise<AppointmentOption[]> {
-    onStep?.('clinic');
-    const clinic = await this.services.clinics.clinicFor(req.specialty);
-    if (!clinic) return [];
-    const { earliest, latest, weekdays } = req.constraints;
-    const slots = (await this.services.clinics.openSlots(clinic.id, req.window.from, req.window.to)).filter(
-      s =>
-        toMinutes(s.time) >= toMinutes(earliest) &&
-        toMinutes(s.time) <= toMinutes(latest) &&
-        (weekdays.length === 0 || weekdays.includes(weekdayOf(s.date)))
-    );
-
-    onStep?.('calendar');
-    onStep?.('transport');
-    const travel = await this.services.travel.minutes(req.familyId, clinic.id);
-    const nameOf = (id: string) => req.members.find(m => m.id === id)?.name ?? id;
-    const candidates = await Promise.all(
-      slots.map(async slot => {
-        const leaveAt = shiftTime(slot.time, -travel);
-        const backAt = shiftTime(slot.time, VISIT_MINUTES + travel);
-        const drivers = await this.services.calendar.freeDrivers(req.familyId, slot.date, leaveAt, backAt);
-        const driver = drivers[0] ? { id: drivers[0], name: nameOf(drivers[0]) } : null;
-        return { slot, driver, leaveAt };
-      })
-    );
-
+    const facts = await gatherFacts(this.services, req, onStep);
+    if (!facts) return [];
     onStep?.('planner');
-    candidates.sort((a, b) => Number(!a.driver) - Number(!b.driver) || (a.slot.date + a.slot.time).localeCompare(b.slot.date + b.slot.time));
-    return candidates.slice(0, MAX_OPTIONS).map(({ slot, driver, leaveAt }, i) => {
-      const ride = driver ? `${driver.name} drives` : 'taxi';
-      const day = LONG_DAY[weekdayOf(slot.date)];
-      const reason = driver
-        ? `${i === 0 ? 'Earliest slot that fits, and ' : ''}${driver.name} is free ${day} ${toMinutes(slot.time) < 12 * 60 ? 'morning' : 'afternoon'}.`
-        : `No one in the family is free then, so a taxi, about ${travel} minutes each way.`;
-      return {
-        id: `${slot.date}T${slot.time}-${clinic.id}-${slug(slot.doctor)}-${driver?.id ?? 'taxi'}`,
-        rank: i + 1,
-        date: slot.date,
-        time: slot.time,
-        clinicId: clinic.id,
-        clinic: clinic.name,
-        specialty: clinic.specialty,
-        doctor: slot.doctor,
-        driver,
-        leaveAt,
-        travelMinutes: travel,
-        label: `${SHORT_DAY[weekdayOf(slot.date)]} ${spokenTime(slot.time)} with ${slot.doctor}, ${ride}`,
-        reason: reason[0].toUpperCase() + reason.slice(1)
-      };
-    });
+    return rankLocally(facts, req);
   }
 }
 

@@ -155,7 +155,10 @@ def test_line5_sam_books_a_cardiology_follow_up_and_a_ride(sim: str) -> None:
         "Thu 9:15 am with Dr Mehta, Maya drives",
         "Thu 11:30 am with Dr Rao, Maya drives",
     ]
-    assert of(events, "tool_result")[0]["structuredContent"]["result"] == "booked"
+    result = of(events, "tool_result")[0]["structuredContent"]
+    assert result["result"] == "booked"
+    # Ranked by the orchestrator's care team (the Strands Graph), not the server's local fallback.
+    assert result["plannedBy"] == "strands-graph:deterministic"
     assert speech(events) == (
         "Booked: Rose's cardiology follow-up with Dr Rao at Riverside Heart Clinic, Tuesday at 10:30 am. "
         "Maya is driving, leaving at 10:05 am."

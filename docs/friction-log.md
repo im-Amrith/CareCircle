@@ -303,6 +303,63 @@ happens, not reconstructed at the end.
   wire-only in 2.x. Let `registerTool()` pass `execution` through. Let the client accept a
   `CreateTaskResult` when the request carried a `task` param.
 
+## FL-14: Nova 2 Lite agents in a Strands Graph misread facts given as JSON in the prompt
+
+- **Date:** 2026-10-22
+- **Area:** Amazon Bedrock (Amazon Nova 2 Lite, `global.amazon.nova-2-lite-v1:0`, ap-southeast-2)
+  with Strands Agents 1.59.0 `GraphBuilder`
+- **Task attempted:** The appointment care team ranks clinic slots. A coordinator node feeds
+  clinic, calendar and transport nodes in parallel, and they feed a planner. Every node got the
+  same JSON brief: 11 open slots, each with its drivers, plus the constraints (`earliest 08:00`,
+  `latest 11:59`).
+- **Steps taken:** Ran the Graph twice on Bedrock with the demo brief and compared the result to
+  the deterministic ranking.
+- **Expected:** The clinic node lists the 6 morning slots. The planner returns the three slots
+  where Maya can drive, earliest first (Tue 10:30, Thu 9:15, Thu 11:30).
+- **Actual:**
+  - The clinic node listed only 3 of the 6 fitting slots, missing Tue 10:30, Wed 11:00 and Thu
+    11:30.
+  - The first run's planner put a taxi slot (Mon 9:30) second, ahead of two slots where Maya
+    could drive.
+  - The second run put Thu 9:15 first, with the reason "Earliest morning slot with family
+    driver", although Tue 10:30 is two days earlier.
+  - All the ids it returned were real, so nothing invalid could have been booked. But the order
+    and the reasons were wrong.
+- **Severity:** Major
+- **Workaround:**
+  - Each specialist reads its part of the facts through a Strands tool (`@tool(context=True)`
+    reading the brief from `invocation_state`): `slots_that_fit`, `who_can_drive`, `ride_plan`.
+    The planner gets `candidates`, already in the family's order. After that change, one run gave
+    the correct 6 slots and the correct top three in about 8.7 seconds.
+  - The MCP server still re-checks every pick against the facts and falls back to its own ranking.
+  - Remaining nit: the top option's reason says "earliest slot" where "earliest slot with a
+    driver" is meant.
+- **Suggestion:** Show this grounding pattern in the Strands multi-agent samples: the shared facts
+  go in `invocation_state`, nodes read them through tools, and the model reasons. Today the
+  examples pass data through the task text. A Bedrock note on Nova 2 Lite's reliability when
+  filtering structured lists in a prompt would also help.
+
+## FL-15: Writing a deterministic Strands Graph node means reading the Graph source
+
+- **Date:** 2026-10-22
+- **Area:** Strands Agents 1.59.0 (`strands.multiagent.GraphBuilder`, `strands.agent.base.AgentBase`)
+- **Task attempted:** Run the care team Graph in mock mode with deterministic nodes, so judges
+  can run it without AWS and the Graph wiring is still tested.
+- **Steps taken:** Looked for a fake or scripted model or agent in the SDK, then read
+  `multiagent/graph.py` to see how nodes are executed.
+- **Expected:** A documented test double, or a documented contract for custom `AgentBase` nodes.
+- **Actual:** There is no test double. The contract is only in the source:
+  - The Graph calls `stream_async(node_input, invocation_state=...)`, and the node must yield an
+    event with a `"result"` key holding an `AgentResult`. Otherwise it fails with `Node '<id>'
+    did not produce a result event`.
+  - Building an `AgentResult` needs `EventLoopMetrics` from `strands.telemetry.metrics`.
+- **Severity:** Minor
+- **Workaround:** `ScriptedNode` in `alexa-sim/orchestrator/carecircle_sim/care_team.py` (about
+  25 lines). The same nodes stand in for Bedrock agents in tests, including a planner that wraps
+  its JSON in prose the way models do.
+- **Suggestion:** Ship a scripted-response model or agent for tests, and document the
+  `AgentBase` node contract (events, `AgentResult`, `invocation_state`) in the multi-agent docs.
+
 ---
 
 ## Feature requests
