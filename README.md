@@ -126,8 +126,9 @@ With the clock frozen at 9 am IST (`npm run sim:demo` or `sim:mock`):
 3. **Sam:** "How is Mom today?" Two of five doses taken, the next dose, the visit and the note.
 4. **Sam:** "Is she running low on anything?" then "Reorder it", then accept the form, then **Open secure page** and **Place order**. The card turns green when the server sends `notifications/elicitation/complete`.
 5. Switch to **Dot**. **Sam:** "Any updates?" The reply now ends "A refill arrives tomorrow."
-6. **Rose:** "I had a fall in the kitchen". She gets safety advice and a red alert card, and the family is flagged.
-7. **Rose:** "Should I take an extra blood pressure tablet?" She gets a safe refusal, and no tool is called.
+6. **Sam:** "Book Mom's cardiology follow-up next week, mornings only, and sort out a ride." A picker offers three times, best first ("Tue 10:30 am with Dr Rao, Maya drives"). Pick one: "Booked: Rose's cardiology follow-up with Dr Rao at Riverside Heart Clinic, Tuesday at 10:30 am. Maya is driving, leaving at 10:05 am." Decline instead, and nothing is booked.
+7. **Rose:** "I had a fall in the kitchen". She gets safety advice and a red alert card, and the family is flagged.
+8. **Rose:** "Should I take an extra blood pressure tablet?" She gets a safe refusal, and no tool is called.
 
 **New chat** resets a profile's MCP session and conversation. Restart `npm run sim:demo` to reset the family's data.
 
@@ -143,6 +144,10 @@ Click **Family view** at the top: Rose on a Show 8 on the left, Sam on a Phone o
 6. Switch Rose to **हिंदी** (or say "Talk to me in Hindi"). **Rose:** "सुप्रभात". She hears her status in Hindi and her dashboard is in Hindi; Sam still hears English.
 7. **Sam:** "Send everyone today's summary". The summary arrives as a message on Sam's phone (and Maya's), and by email when SNS is set up.
 
+## Agent Skill
+
+[`skills/carecircle/SKILL.md`](skills/carecircle/SKILL.md) is an [Agent Skill](https://agentskills.io/). It teaches any agent to use this server: how to connect, which tool fits each request, the safety rules and two worked examples. [`skills/carecircle/README.md`](skills/carecircle/README.md) explains how to install it in Claude Code or Kiro.
+
 ## What the server exposes
 
 ### Tools
@@ -154,6 +159,8 @@ Click **Family view** at the top: Rose on a Show 8 on the left, Sam on a Phone o
 | `log_medication` | "I took my morning pills", "I took the blood pressure one" | Idempotent: repeating a call never double-logs. Ambiguous names return options to ask about |
 | `check_refills` | "Am I running low on anything?" | Read-only. Days of supply left, when each runs out, and any refill already on its way |
 | `request_refill` | "Reorder my blood pressure tablets", "Yes" after a low-supply warning | Asks first, then opens a one-time checkout link. Nothing is ordered until checkout is completed. Asking twice never orders twice |
+| `coordinate_appointment` | "Book Mom's cardiology follow-up next week, mornings only, and sort out a ride" | Checks the clinic, family calendars and travel time, offers up to three ranked options, and books only the one the person picks. Can run as an MCP Task |
+| `set_care_preference` | "Mom prefers mornings", "Not on Fridays" | Remembers appointment times of day and days for the whole family, across conversations. `coordinate_appointment` uses them unless a request says otherwise |
 | `log_wellbeing` | "I slept badly", "I had a fall", "मैं रसोई में गिर गई" | Red-flag words (falls, chest pain, breathing trouble, in English or Hindi) return safety guidance and alert the family's devices |
 | `set_language` | "Talk to me in Hindi", "हिंदी में बात करो", "Speak English" | Changes only the caller's own language; the rest of the family keeps theirs |
 | `send_daily_summary` | "Send everyone today's summary" | Writes the day's summary to the family inbox, and to Amazon SNS when configured. Also sent automatically every evening |
@@ -180,6 +187,47 @@ How the checkout is secured:
 - Responses are sent with `Cache-Control: no-store`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY` and a CSP that allows no scripts.
 - No card or payment details are ever collected: payment is settled with the pharmacy. In this demo no real order leaves the server.
 - Only the recipient and coordinators can start a refill; helpers get a spoken refusal.
+
+### Appointments and rides
+
+`coordinate_appointment` plans a doctor's visit and a ride, then books only what the person picks.
+
+1. **Plan.** It checks the clinic's open slots, who in the family is free to drive (for the whole round trip) and the travel time, and ranks up to three options with a one-line reason each. A family member driving beats a taxi, then earliest first. Clinic, calendars and travel are synthetic services behind small interfaces (`server/src/domain/appointments.ts`), so a real booking API or calendar can replace them.
+2. **Pick.** Clients with form elicitation get a slot picker. Declining books nothing. As with refills, `confirm: true` from the model never skips the picker. Voice-only clients get `needs_choice` with the options read aloud. To book, they call again with `option_id` and `confirm: true` after a clear yes. The server only accepts an option it read out to that family in the last 30 minutes.
+3. **Book.** The appointment shows in `get_care_status` ("Cardiology follow-up with Dr Rao on Tuesday at 10:30 am. Maya is driving.") and on family screens. The driver also gets a helper task, for example "Drive Rose to Riverside Heart Clinic" at 10:05 am. Booking the same slot twice never doubles up.
+
+**Who ranks the options: a Strands care team.** In the simulator, the server asks the orchestrator's care team, a Strands Agents multi-agent Graph:
+
+```text
+coordinator --+--> clinic ------+
+              +--> calendar ----+--> planner
+              +--> transport ---+
+```
+
+- The **coordinator** restates the request and preferences.
+- **Clinic**, **family calendar** and **transport** run in parallel. Each reads its part of the facts through a tool.
+- The **planner** picks up to three options with a one-line reason each.
+- The server sends the facts as a brief to `POST /plan/appointment`. It keeps the task, the picker and the booking itself.
+
+The two modes:
+
+- **AWS mode:** each node is an Agent on Amazon Bedrock (`global.amazon.nova-2-lite-v1:0` in `ap-southeast-2`). One plan took about 9 seconds in testing, with the three specialists overlapping.
+- **Mock mode,** and the fallback when Bedrock fails: the same Graph runs with deterministic nodes, so the same request always gets the same three options and judges can run it without AWS.
+
+The server re-checks every pick. It must be a real open slot that fits the constraints, with a driver who is actually free. Anything else is dropped and topped up from the server's own ranking. If the care team is unreachable, the server ranks locally. `structuredContent.plannedBy` shows which one ranked the options, for example `strands-graph:bedrock:global.amazon.nova-2-lite-v1:0`, `strands-graph:deterministic` or `local`.
+
+**MCP Tasks (2025-11-25, experimental).** The tool is listed with `execution.taskSupport: "optional"`, and the server advertises `capabilities.tasks`.
+
+- A `tools/call` with a `task` param returns a task handle at once.
+- The status moves `working` ("Checking the clinic…", "Checking who can drive…") to `input_required` (pick a slot) to `completed`. Each change is sent as `notifications/tasks/status`.
+- The picker is asked as an elicitation on the client's `tasks/result` request, tagged with the related task.
+- `tasks/get`, `tasks/result`, `tasks/list` and `tasks/cancel` are supported. Cancelling while it waits for a pick books nothing.
+- Tasks belong to the member who started them.
+- Without a `task` param, the tool runs synchronously and sends `notifications/progress` with the same steps.
+
+**Preferences.** When someone says "Mom prefers mornings" or "not on Fridays", `set_care_preference` stores it on the family. It's kept server-side, so it applies to any family member's next conversation. The next booking uses it when the request doesn't say otherwise, and says so: "…mornings, as Rose prefers". Whatever is asked this time wins. "Forget Mom's appointment preferences" clears them. Here they live in the server's store. In production, AgentCore Memory is the natural home for them (long-term memory per family), behind the same store interface. That isn't deployed in this project.
+
+The MCP TypeScript SDK 2.3.1 has the task wire types but no task runtime, so `server/src/mcp/tasks.ts` provides one (see the friction log).
 
 ### Resources and prompts
 
@@ -235,6 +283,7 @@ If SNS fails, the message still reaches the inbox and the failure is recorded on
 | `DIGEST_TIME` | `20:30` | Family-local time for the evening summary; `off` disables the scheduler |
 | `SNS_TOPIC_ARN` | unset | Amazon SNS topic for the evening summary. Unset = in-app inbox only |
 | `AWS_REGION` | SDK default | Region for SNS |
+| `CARECIRCLE_PLANNER_URL` | unset | The orchestrator's care team endpoint for appointment planning, e.g. `http://127.0.0.1:8100/plan/appointment` (`npm run sim` sets it). Unset = rank locally |
 
 Dev auth (`Bearer dev:<userId>`) is for local use only. The AWS deployment replaces it with Cognito JWTs validated by AgentCore Runtime.
 
@@ -249,9 +298,10 @@ server/                 MCP server (TypeScript, MCP SDK v2)
   test/                 Unit, MCP and transport conformance tests
 seed/rose.json          Synthetic demo family (dates relative to today)
 mcp.config.json         Client config pointing at the local server
-alexa-sim/orchestrator/ Simulator brain (Python): MCP client, Strands agent on Bedrock, Polly, SSE API
+alexa-sim/orchestrator/ Simulator brain (Python): MCP client, Strands agent on Bedrock, the appointment care team (Strands Graph), Polly, SSE API
 alexa-sim/web/          Simulator UI (React + Vite): device frames, cards, elicitation, protocol panel
 scripts/                Cross-platform setup and launcher (npm run setup / sim)
+skills/carecircle/      Agent Skill: how any agent should use the CareCircle server
 docs/friction-log.md    Developer friction log for the hackathon
 ```
 

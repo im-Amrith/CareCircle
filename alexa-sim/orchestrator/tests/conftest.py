@@ -46,13 +46,15 @@ def wait_for(url: str, timeout: float = 30) -> None:
 
 
 @contextlib.contextmanager
-def running_mcp_server() -> Iterator[str]:
+def running_mcp_server(planner_url: str | None = None) -> Iterator[str]:
     """Starts server/src/index.ts with tsx on a free port. Requires `npm install` in server/."""
     tsx = SERVER_DIR / "node_modules" / "tsx" / "dist" / "cli.mjs"
     if not tsx.exists():
         pytest.exit("Run `npm install` in server/ first (tsx not found)", returncode=1)
     port = free_port()
     env = {**os.environ, "PORT": str(port), "HOST": "127.0.0.1", "CARECIRCLE_NOW": NINE_AM_IST}
+    if planner_url:
+        env["CARECIRCLE_PLANNER_URL"] = planner_url
     proc = subprocess.Popen(
         [shutil.which("node") or "node", str(tsx), "src/index.ts"],
         cwd=SERVER_DIR,
@@ -72,10 +74,10 @@ def running_mcp_server() -> Iterator[str]:
 
 
 @contextlib.contextmanager
-def running_sim(mcp_url: str) -> Iterator[str]:
+def running_sim(mcp_url: str, port: int | None = None) -> Iterator[str]:
     """The orchestrator in mock mode, in a background thread."""
     settings = Settings(mcp_url=f"{mcp_url}/mcp", mock_aws=True, mock_reason="tests")
-    port = free_port()
+    port = port or free_port()
     server = uvicorn.Server(uvicorn.Config(create_app(settings), host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -88,14 +90,20 @@ def running_sim(mcp_url: str) -> Iterator[str]:
 
 
 @pytest.fixture(scope="session")
-def mcp_server() -> Iterator[str]:
-    with running_mcp_server() as url:
+def sim_port() -> int:
+    """Chosen up front, so the MCP server can be told where the care team planner is."""
+    return free_port()
+
+
+@pytest.fixture(scope="session")
+def mcp_server(sim_port: int) -> Iterator[str]:
+    with running_mcp_server(planner_url=f"http://127.0.0.1:{sim_port}/plan/appointment") as url:
         yield url
 
 
 @pytest.fixture(scope="session")
-def sim(mcp_server: str) -> Iterator[str]:
-    with running_sim(mcp_server) as url:
+def sim(mcp_server: str, sim_port: int) -> Iterator[str]:
+    with running_sim(mcp_server, sim_port) as url:
         yield url
 
 

@@ -18,12 +18,14 @@ describe('MCP surface', () => {
     const { tools } = await c.listTools();
     expect(tools.map(t => t.name).sort()).toEqual([
       'check_refills',
+      'coordinate_appointment',
       'get_care_status',
       'list_medications',
       'log_medication',
       'log_wellbeing',
       'request_refill',
       'send_daily_summary',
+      'set_care_preference',
       'set_language'
     ]);
     for (const t of tools) {

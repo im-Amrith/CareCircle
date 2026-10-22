@@ -1,12 +1,15 @@
 import type {
+  CarePreference,
   CareStore,
   DoseLog,
   Family,
   FamilyMessage,
+  HelperTask,
   Language,
   Medication,
   Member,
   OrderStatus,
+  PreferenceKey,
   Pharmacy,
   RefillOrder,
   Visit,
@@ -21,9 +24,11 @@ export class MemoryStore implements CareStore {
   pharmacies = new Map<string, Pharmacy>();
   doseLogs: DoseLog[] = [];
   visits: Visit[] = [];
+  helperTasks: HelperTask[] = [];
   wellbeing: WellbeingNote[] = [];
   orders: RefillOrder[] = [];
   messages: FamilyMessage[] = [];
+  preferences: CarePreference[] = [];
 
   async getMember(userId: string) {
     return this.members.get(userId);
@@ -82,6 +87,20 @@ export class MemoryStore implements CareStore {
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   }
 
+  async addVisit(visit: Visit) {
+    this.visits.push(visit);
+  }
+
+  async listHelperTasks(familyId: string, fromDate: string, toDate: string) {
+    return this.helperTasks
+      .filter(t => t.familyId === familyId && t.date >= fromDate && t.date <= toDate)
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  }
+
+  async addHelperTask(task: HelperTask) {
+    this.helperTasks.push(task);
+  }
+
   async listWellbeing(familyId: string, fromDate: string, toDate: string) {
     return this.wellbeing
       .filter(n => n.familyId === familyId && n.date >= fromDate && n.date <= toDate)
@@ -109,6 +128,21 @@ export class MemoryStore implements CareStore {
     if (!order || order.status !== from) return undefined;
     Object.assign(order, patch);
     return order;
+  }
+
+  async listPreferences(familyId: string) {
+    return this.preferences.filter(p => p.familyId === familyId);
+  }
+
+  async setPreference(preference: CarePreference) {
+    this.preferences = this.preferences.filter(p => !(p.familyId === preference.familyId && p.key === preference.key));
+    this.preferences.push(preference);
+  }
+
+  async removePreference(familyId: string, key: PreferenceKey) {
+    const before = this.preferences.length;
+    this.preferences = this.preferences.filter(p => !(p.familyId === familyId && p.key === key));
+    return this.preferences.length < before;
   }
 
   async addMessage(message: FamilyMessage) {

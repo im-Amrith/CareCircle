@@ -29,7 +29,8 @@ const procs = [
     // Plain start (no file watching) so the demo's in-memory data is never reset mid-recording.
     ...npmSpawn(['exec', '--', 'tsx', 'src/index.ts']),
     cwd: SERVER,
-    env: { ...base, PORT: '8000', ...(args.has('--demo') ? { CARECIRCLE_NOW: DEMO_NOW } : {}) }
+    // Appointment options are ranked by the orchestrator's Strands care team (local ranking if it's down).
+    env: { ...base, PORT: '8000', CARECIRCLE_PLANNER_URL: 'http://127.0.0.1:8100/plan/appointment', ...(args.has('--demo') ? { CARECIRCLE_NOW: DEMO_NOW } : {}) }
   },
   {
     name: 'orch',

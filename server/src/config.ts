@@ -30,6 +30,8 @@ export interface Config {
   awsRegion?: string;
   /** Family-local HH:MM to send the evening summary; DIGEST_TIME=off disables the scheduler. */
   digestTime?: string;
+  /** The orchestrator's care team endpoint (Strands Graph) for appointment planning. Unset = plan locally. */
+  plannerUrl?: string;
 }
 
 function list(v: string | undefined): string[] | undefined {
@@ -51,6 +53,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicUrl: env.PUBLIC_URL?.replace(/\/+$/, '') || undefined,
     snsTopicArn: env.SNS_TOPIC_ARN || undefined,
     awsRegion: env.AWS_REGION || env.AWS_DEFAULT_REGION || undefined,
+    plannerUrl: env.CARECIRCLE_PLANNER_URL || undefined,
     digestTime: env.DIGEST_TIME === 'off' ? undefined : /^\d{2}:\d{2}$/.test(env.DIGEST_TIME ?? '') ? env.DIGEST_TIME : '20:30'
   };
 }

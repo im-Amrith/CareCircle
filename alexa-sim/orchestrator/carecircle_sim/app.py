@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .agent import AgentPool
 from .bus import Bus
+from .care_team import plan_appointment
 from .config import Settings, load_settings
 from .mcp_link import AppToolDenied, ElicitationBroker, Links
 from .proactive import Proactive
@@ -142,6 +143,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "reminders": {"idleSeconds": settings.reminder_idle_s},
             "profiles": [{"id": k, "name": v["name"], "connected": links.get(k).connected} for k, v in settings.profiles.items()],
         }
+
+    @app.post("/plan/appointment")
+    async def plan(brief: dict[str, Any]) -> dict[str, Any]:
+        """The care team (a Strands Graph) ranks appointment options from the MCP server's brief.
+        Local only: the server calls this; it books nothing and the server re-checks every pick."""
+        if not isinstance(brief.get("slots"), list) or not isinstance(brief.get("window"), dict) or not isinstance(brief.get("clinic"), dict):
+            raise HTTPException(400, "Expected a planning brief with slots, window and clinic")
+        result = await plan_appointment(brief, bedrock=None if settings.mock_aws else (settings.bedrock_model_id, settings.aws_region))
+        log.info("care team planned %d options with %s in %d ms", len(result["options"]), result["engine"], result["ms"])
+        return result
 
     @app.post("/profiles/{profile}/connect")
     async def connect(profile: str) -> dict[str, Any]:

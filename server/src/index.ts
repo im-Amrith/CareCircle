@@ -12,6 +12,7 @@ const httpServer = app.listen(config.port, config.host, () => {
   console.log(`${SERVER_NAME} ${SERVER_VERSION} listening on http://${config.host}:${config.port}/mcp`);
   console.log(`Auth: dev mode. Default user "${config.defaultUser}"; send "Authorization: Bearer dev:rose|sam|maya" to switch.`);
   if (config.fixedNow) console.log(`Clock frozen at ${config.fixedNow}`);
+  console.log(`Appointment planning: ${config.plannerUrl ? `care team at ${config.plannerUrl} (local ranking if it fails)` : 'local'}`);
 });
 
 const shutdown = async () => {

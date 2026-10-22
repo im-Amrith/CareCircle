@@ -136,3 +136,43 @@ def test_router_covers_the_demo_script() -> None:
     assert route("I had a fall in the kitchen", None).tool == "log_wellbeing"
     assert route("Should I take an extra blood pressure tablet?", None).tool is None
     assert route("What do I take tonight?", None).arguments == {"when": "night"}
+
+
+def test_line5_sam_books_a_cardiology_follow_up_and_a_ride(sim: str) -> None:
+    asked: list[dict] = []
+
+    def pick_first(e: dict) -> dict:
+        asked.append(e)
+        return {"action": "accept", "content": {"option": e["requestedSchema"]["properties"]["option"]["oneOf"][0]["const"]}}
+
+    events = turn(sim, "sam", "Book Mom's cardiology follow-up next week, mornings only, and sort out a ride.", pick_first)
+    call = of(events, "tool_call")[0]
+    assert call["name"] == "coordinate_appointment"
+    assert call["arguments"] == {"specialty": "cardiology follow-up", "window": "next week", "constraints": "mornings only"}
+    options = asked[0]["requestedSchema"]["properties"]["option"]["oneOf"]
+    assert [o["title"] for o in options] == [
+        "Tue 10:30 am with Dr Rao, Maya drives",
+        "Thu 9:15 am with Dr Mehta, Maya drives",
+        "Thu 11:30 am with Dr Rao, Maya drives",
+    ]
+    result = of(events, "tool_result")[0]["structuredContent"]
+    assert result["result"] == "booked"
+    # Ranked by the orchestrator's care team (the Strands Graph), not the server's local fallback.
+    assert result["plannedBy"] == "strands-graph:deterministic"
+    assert speech(events) == (
+        "Booked: Rose's cardiology follow-up with Dr Rao at Riverside Heart Clinic, Tuesday at 10:30 am. "
+        "Maya is driving, leaving at 10:05 am."
+    )
+
+    # It shows up for the family, and Maya hears she's driving.
+    assert "You're driving." in speech(turn(sim, "maya", "How is Mom today?"))
+
+
+def test_router_sends_preferences_and_bookings_to_the_right_tools() -> None:
+    assert route("Mom prefers mornings", None).tool == "set_care_preference"
+    assert route("Mom prefers mornings", None).arguments == {"preference": "Mom prefers mornings"}
+    assert route("Forget Mom's appointment preferences", None).arguments["forget"] is True
+    book = route("Book Mom's cardiology follow-up next week, mornings only, and sort out a ride.", None)
+    assert (book.tool, book.arguments["specialty"]) == ("coordinate_appointment", "cardiology follow-up")
+    # Still the medication schedule, not a booking.
+    assert route("What's her schedule tonight?", None).tool == "list_medications"
