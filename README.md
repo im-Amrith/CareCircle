@@ -10,13 +10,14 @@ Built for the [Build, Ship, Shape: Amazon Developer Hackathon](https://amazonapp
 
 | Part | State |
 | --- | --- |
-| MCP server (`server/`): 8 tools, 4 resource templates (2 subscribable), 1 MCP App view, 2 prompts, stateful Streamable HTTP | Working, 70 tests |
+| MCP server (`server/`): 12 tools, 4 resource templates (2 subscribable), 1 MCP App view, 2 prompts, stateful Streamable HTTP | Working, 152 tests (plus 34 simulator tests) |
 | Refill ordering: voice confirmation, form and URL elicitation, secure checkout page | Working |
 | Simulator (`alexa-sim/`): Strands agent on Amazon Bedrock (Nova 2 Lite), Amazon Polly, device frames, live MCP protocol panel | Working, mock and AWS modes |
 | Interactive care dashboard (MCP Apps) | Working |
 | Family features: live updates across devices, safety alerts, Hindi, accessibility, gentle reminders, evening summary (Amazon SNS) | Working |
 | Appointment coordination (Tasks), Strands care team, care preferences | Working |
 | Who's speaking? Identity-aware safety on shared devices (simulated voice match, rules enforced by the server) | Working |
+| Morning check-ins: notices a quiet morning, asks the parent first, then tells the family; pause and turn-off controls | Working |
 | AWS deployment: AgentCore Runtime, Strands care-team agents | Next |
 
 ## Quick start (no AWS needed)
