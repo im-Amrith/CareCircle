@@ -4,6 +4,8 @@
 
 Built for the [Build, Ship, Shape: Amazon Developer Hackathon](https://amazonappdev2026.devpost.com/): **Alexa+ track** (self-hosted MCP server, spec 2025-11-25, Streamable HTTP) and the **AWS Builder** mini challenge.
 
+Demo video: <YouTube link>
+
 > CareCircle coordinates care. It never gives medical advice, changes doses or diagnoses. All data in this repo is synthetic.
 
 ## Status
