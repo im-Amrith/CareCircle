@@ -60,13 +60,15 @@ const ARGS: Record<string, Record<string, unknown>> = {
   get_care_status: {},
   list_medications: {},
   check_refills: {},
+  get_morning_rhythm: {},
   log_medication: { spoken_name: 'metformin' },
   log_wellbeing: { note: 'Feeling a bit tired today' },
   request_refill: {},
   coordinate_appointment: { specialty: 'cardiology follow-up', window: 'next week', constraints: 'mornings' },
   set_language: { language: 'en' },
   set_care_preference: { preference: 'Mom prefers mornings' },
-  send_daily_summary: {}
+  send_daily_summary: {},
+  set_check_ins: { action: 'pause', until: 'tomorrow', reason: 'staying with Sam' }
 };
 
 describe("Who's speaking? Tool classification", () => {
@@ -88,8 +90,8 @@ describe("Who's speaking? Tool classification", () => {
     await client.close();
   });
 
-  it('reads are exactly the status, medication list and refill check', () => {
-    expect(Object.entries(TOOL_KINDS).filter(([, k]) => k === 'read').map(([n]) => n).sort()).toEqual(['check_refills', 'get_care_status', 'list_medications']);
+  it('reads are exactly the status, medication list, refill check and morning rhythm', () => {
+    expect(Object.entries(TOOL_KINDS).filter(([, k]) => k === 'read').map(([n]) => n).sort()).toEqual(['check_refills', 'get_care_status', 'get_morning_rhythm', 'list_medications']);
   });
 
   it('rejects a confidence it does not know', async () => {

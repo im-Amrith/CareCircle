@@ -31,7 +31,7 @@ class Proactive:
     async def on_today(self, link: ProfileLink) -> None:
         for alert in link.new_alerts():
             extra, _ = await self.runner.voice(link, alert["text"], slow=False)
-            self.bus.publish(link.profile, "announcement", {"kind": "alert", "id": alert["id"], "text": alert["text"], **extra})
+            self.bus.publish(link.profile, "announcement", {"kind": "alert", "category": alert.get("kind", "safety"), "id": alert["id"], "text": alert["text"], **extra})
 
     async def remind(self, link: ProfileLink, force: bool = False) -> dict[str, Any] | None:
         """Says the current reminder, if there is one. Without force: once per dose slot, only when idle."""

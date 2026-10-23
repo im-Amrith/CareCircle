@@ -1,4 +1,7 @@
 import type {
+  Activity,
+  CheckIn,
+  CheckInSettings,
   CarePreference,
   CareStore,
   DoseLog,
@@ -31,6 +34,9 @@ export class MemoryStore implements CareStore {
   messages: FamilyMessage[] = [];
   preferences: CarePreference[] = [];
   voiceChecks: VoiceCheck[] = [];
+  activity: Activity[] = [];
+  checkInSettings = new Map<string, CheckInSettings>();
+  checkIns: CheckIn[] = [];
 
   async getMember(userId: string) {
     return this.members.get(userId);
@@ -153,6 +159,31 @@ export class MemoryStore implements CareStore {
 
   async addVoiceCheck(check: VoiceCheck) {
     this.voiceChecks.push(check);
+  }
+
+  async addActivity(activity: Activity) {
+    this.activity.push(activity);
+  }
+
+  async listActivity(familyId: string, fromDate: string, toDate: string) {
+    return this.activity.filter(a => a.familyId === familyId && a.date >= fromDate && a.date <= toDate);
+  }
+
+  async getCheckInSettings(familyId: string) {
+    return this.checkInSettings.get(familyId);
+  }
+
+  async setCheckInSettings(settings: CheckInSettings) {
+    this.checkInSettings.set(settings.familyId, { ...settings });
+  }
+
+  async listCheckIns(familyId: string, fromDate: string, toDate: string) {
+    return this.checkIns.filter(c => c.familyId === familyId && c.date >= fromDate && c.date <= toDate).sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  async saveCheckIn(checkIn: CheckIn) {
+    this.checkIns = this.checkIns.filter(c => c.id !== checkIn.id);
+    this.checkIns.push({ ...checkIn });
   }
 
   async addMessage(message: FamilyMessage) {

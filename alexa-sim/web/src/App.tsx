@@ -6,6 +6,7 @@ import {
   fetchRpc,
   openDeviceEvents,
   remindNow,
+  skipAhead,
   resetProfile,
   setLanguage,
   streamTurn,
@@ -186,14 +187,17 @@ export function App() {
             // A message that wasn't there before pops up on the device; the backlog doesn't.
             if (!firstInbox) {
               const known = new Set(all[p].map(m => m.id));
-              for (const m of messages) if (!known.has(m.id)) pushNotice(p, { id: m.id, kind: 'message', title: m.title, text: m.text });
+              // Check-in messages are also announced out loud (below), so they don't pop up twice.
+              for (const m of messages) if (!known.has(m.id) && m.kind !== 'check_in') pushNotice(p, { id: m.id, kind: 'message', title: m.title, text: m.text });
             }
             firstInbox = false;
             return { ...all, [p]: messages };
           });
         },
         announcement: a => {
-          pushNotice(p, { id: a.id, kind: a.kind, title: a.kind === 'alert' ? 'CareCircle alert' : 'Gentle reminder', text: a.text });
+          // A check-in is a gentle question, not a red-flag alert, so it looks (and clears) like a reminder.
+          const checkIn = a.category === 'check_in';
+          pushNotice(p, { id: a.id, kind: checkIn ? 'reminder' : a.kind, title: a.kind === 'reminder' ? 'Gentle reminder' : checkIn ? 'Morning check-in' : 'CareCircle alert', text: a.text });
           setRing(p, 'notify');
           void announce(a.text, a.audio, { muted: mutedRef.current, lang: a.lang, slow: prefsRef.current[p].slow });
         }
@@ -343,6 +347,14 @@ export function App() {
     }
   }, []);
 
+  const skip = useCallback(async (by: { minutes: number } | { to: string }) => {
+    try {
+      await skipAhead(by);
+    } catch (err) {
+      setBanner({ tone: 'warn', text: (err as Error).message });
+    }
+  }, []);
+
   const current = profiles[panelProfile];
   const visibleRpc = useMemo(() => current.rpc.filter(e => e.seq > current.clearedAt), [current.rpc, current.clearedAt]);
 
@@ -488,6 +500,7 @@ export function App() {
           onPrefs={next => setPrefs(all => ({ ...all, [p]: next }))}
           onRemind={isRecipient ? () => void remind(p) : undefined}
           remindHint={`Reminders also come by themselves after ${health?.reminders?.idleSeconds ?? 45} seconds of quiet`}
+          onSkip={by => void skip(by)}
           inboxCount={inbox[p].length}
           voice={voices[p]}
           onVoice={v => setVoices(all => ({ ...all, [p]: v }))}

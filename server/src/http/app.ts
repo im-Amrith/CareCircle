@@ -13,8 +13,10 @@ import { voiceCheckRouter } from './voice-check.js';
 import { ChangeHub, watchStore } from '../store/changes.js';
 import { createNotifier, snsPublisher } from '../notify/notifier.js';
 import { runDigestSchedule } from '../notify/digest.js';
+import { runCheckInSchedule } from '../mcp/checkins.js';
 import { mockAppointmentServices } from '../domain/appointments.js';
 import { RemotePlanner } from '../domain/remote-planner.js';
+import { localParts, toMinutes } from '../domain/time.js';
 
 interface Session {
   transport: NodeStreamableHTTPServerTransport;
@@ -73,6 +75,34 @@ export function createHttpApp(config: Config, baseDeps: Deps) {
   app.use(voiceCheckRouter(deps));
 
   app.use('/mcp', devAuth(config));
+
+  // Demo only: a frozen clock can be moved forward ("skip ahead 30 minutes") to show what
+  // happens later in the morning. Absent with a real clock, so it can never change real time.
+  if (config.fixedNow && deps.clock.advance) {
+    app.post('/dev/clock', async (req: Request, res: Response) => {
+      // ?minutes=30, or ?to=08:30 for the next time it is 8:30 am in the family's timezone.
+      let minutes = Number((req.query.minutes as string | undefined) ?? 0);
+      const to = req.query.to as string | undefined;
+      if (to !== undefined) {
+        const family = (await deps.store.listFamilies())[0];
+        if (!/^\d{2}:\d{2}$/.test(to) || !family) {
+          res.status(400).json({ error: 'to must be HH:MM' });
+          return;
+        }
+        const nowMin = localParts(deps.clock(), family.timezone).minutes;
+        minutes = ((toMinutes(to) - nowMin + 1440) % 1440) || 1440;
+      }
+      if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 24 * 60) {
+        res.status(400).json({ error: 'minutes must be between 1 and 1440' });
+        return;
+      }
+      const now = deps.clock.advance!(minutes * 60_000);
+      for (const family of await deps.store.listFamilies()) changes.emit({ familyId: family.id, kind: 'clock' });
+      await runCheckInSchedule(deps).catch(err => console.error('[carecircle] check-in failed', err));
+      if (config.digestTime) await runDigestSchedule(deps, config.digestTime).catch(err => console.error('[carecircle] evening summary failed', err));
+      res.json({ now: now.toISOString() });
+    });
+  }
 
   /** Finds the caller's session; answers 400/404/403 itself and returns undefined when it can't. */
   function sessionFor(req: Request, res: Response): Session | undefined {
@@ -161,9 +191,16 @@ export function createHttpApp(config: Config, baseDeps: Deps) {
     : undefined;
   digest?.unref();
 
+  // Morning check-ins: checked every minute; a quiet morning gets a check-in, then the family.
+  const checkIns = setInterval(() => {
+    runCheckInSchedule(deps).catch(err => console.error('[carecircle] check-in failed', err));
+  }, 60_000);
+  checkIns.unref();
+
   async function close() {
     clearInterval(sweep);
     if (digest) clearInterval(digest);
+    clearInterval(checkIns);
     await Promise.all([...sessions.values()].map(s => s.transport.close().catch(() => undefined)));
     sessions.clear();
   }

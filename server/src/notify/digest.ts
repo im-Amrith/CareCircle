@@ -10,6 +10,7 @@ import { careStatus } from '../mcp/status.js';
 import { orderSentence, openOrders } from '../mcp/refills.js';
 import { safetyCheck } from '../domain/care.js';
 import { voiceCheckSentence } from '../mcp/identity.js';
+import { digestLine } from '../mcp/checkins.js';
 
 export const DEFAULT_DIGEST_TIME = '20:30';
 
@@ -47,6 +48,8 @@ export async function composeDigest(deps: Deps, caller: Caller, date: string): P
     const order = orders.get(a.medicationId);
     lines.push(`Supply: ${a.name} has about ${plural(a.daysLeft, 'day')} left.${order ? ` ${orderSentence(order, caller.now, caller.local.date)}` : ' No refill ordered yet.'}`);
   }
+  const morning = await digestLine(deps, caller);
+  if (morning) lines.push(morning);
   if (s.visits.length) lines.push(`Visits: ${listJoin(s.visits.map(v => `${v.who} at ${spokenTime(v.time)}`))}.`);
   if (s.missedLast7Days) lines.push(`Past 7 days: ${plural(s.missedLast7Days, 'dose')} missed.`);
 

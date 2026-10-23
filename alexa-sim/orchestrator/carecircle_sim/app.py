@@ -212,6 +212,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         event = await state["proactive"].remind(link, force=True)
         return {"reminded": event is not None, "text": event["text"] if event else None}
 
+    @app.post("/clock/advance")
+    async def advance_clock(minutes: int = 30, to: str | None = None) -> dict[str, Any]:
+        """Demo only: moves the server's frozen clock forward (minutes, or to the next HH:MM), e.g. to show a quiet morning's check-in."""
+        if to is None and not 1 <= minutes <= 1440:
+            raise HTTPException(400, "minutes must be between 1 and 1440")
+        base = settings.mcp_url.rsplit("/mcp", 1)[0]
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.post(f"{base}/dev/clock", params={"to": to} if to else {"minutes": minutes})
+        if res.status_code == 404:
+            raise HTTPException(409, "The clock only moves in demo mode (npm run sim:demo or sim:mock).")
+        if res.status_code >= 400:
+            raise HTTPException(502, res.text)
+        return res.json()
+
     @app.post("/profiles/{profile}/language")
     async def language(profile: str, body: LanguageIn) -> dict[str, Any]:
         check_profile(profile)

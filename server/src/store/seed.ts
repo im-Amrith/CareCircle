@@ -25,6 +25,8 @@ export interface SeedFile {
     loggedBy: string;
     minutesAfterSlot: [number, number];
     missed: { dayOffset: number; medicationId: string; slot: Slot }[];
+    /** Mornings that started late: that day's morning doses are taken this many minutes later */
+    lateMornings?: { dayOffset: number; minutes: number }[];
   };
   visits: { id: string; dayOffset: number; time: string; who: string; purpose: string }[];
   wellbeing: { dayOffset: number; time: string; note: string; severity: Severity; loggedBy: string }[];
@@ -62,13 +64,15 @@ export function buildSeededStore(seed: SeedFile, now: Date): MemoryStore {
 
   const missed = new Set(seed.history.missed.map(x => `${x.dayOffset}|${x.medicationId}|${x.slot}`));
   const [minAfter, maxAfter] = seed.history.minutesAfterSlot;
+  const lateBy = new Map((seed.history.lateMornings ?? []).map(l => [l.dayOffset, l.minutes]));
 
   for (let offset = -seed.history.days; offset <= -1; offset++) {
     const date = addDays(today, offset);
     for (const med of seed.medications) {
       for (const entry of med.schedule) {
         if (missed.has(`${offset}|${med.id}|${entry.slot}`)) continue;
-        const minutes = toMinutes(seed.slots[entry.slot]) + jitter(`${date}${med.id}${entry.slot}`, minAfter, maxAfter);
+        const late = entry.slot === 'morning' ? (lateBy.get(offset) ?? 0) : 0;
+        const minutes = toMinutes(seed.slots[entry.slot]) + jitter(`${date}${med.id}${entry.slot}`, minAfter, maxAfter) + late;
         const time = `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
         store.doseLogs.push({
           id: `log-${date}-${med.id}-${entry.slot}`,

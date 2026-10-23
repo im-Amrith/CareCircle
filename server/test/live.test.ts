@@ -156,6 +156,7 @@ describe('evening summary', () => {
         'Alert, 9 am: "I had a fall in the kitchen" (a fall).',
         'Notes: 7:45 am, Slept badly last night.',
         'Supply: Amlodipine has about three days left. No refill ordered yet.',
+        'Morning: up at 7:45 am (usually by 8:20 am).',
         'Visits: Maya at 4 pm.',
         'Past 7 days: one dose missed.',
         '',

@@ -166,7 +166,7 @@ export interface CarePreference {
 export interface FamilyMessage {
   id: string;
   familyId: string;
-  kind: 'daily_summary';
+  kind: 'daily_summary' | 'check_in';
   /** Family-local date the message is about */
   date: string;
   title: string;
@@ -197,6 +197,52 @@ export interface VoiceCheck {
   tool: string;
   /** What was asked, e.g. "log Rose's 8 am Metformin" */
   attempted: string;
+}
+
+/** Something the cared-for person did that shows they are up and about: they spoke to CareCircle. */
+export interface Activity {
+  familyId: string;
+  memberId: string;
+  at: string;
+  /** Family-local YYYY-MM-DD and HH:MM */
+  date: string;
+  time: string;
+  /** The tool they used, e.g. "get_care_status" */
+  via: string;
+}
+
+/** How the family wants morning check-ins to work. One per family. */
+export interface CheckInSettings {
+  familyId: string;
+  enabled: boolean;
+  /** Family-local YYYY-MM-DD: no check-ins up to and including this day */
+  pausedUntil?: string;
+  /** e.g. "Mom's staying with me till Sunday" */
+  pauseReason?: string;
+  /** Minutes after the usual time before CareCircle checks in. Default 30. */
+  graceMinutes: number;
+  /** Minutes after checking in, with no answer, before the family is told. Default 30. */
+  escalateMinutes: number;
+  setBy: string;
+  setAt: string;
+}
+
+/** One morning's check-in, from asking the person to telling the family. */
+export interface CheckIn {
+  id: string;
+  familyId: string;
+  date: string;
+  /** HH:MM they are usually up by, from the past two weeks */
+  usual: string;
+  /** asked: CareCircle asked the person. family_told: no answer, so the family was told. */
+  stage: 'asked' | 'family_told';
+  askedAt: string;
+  askedTime: string;
+  familyToldAt?: string;
+  familyToldTime?: string;
+  /** Set when the person was heard from after being asked */
+  answeredAt?: string;
+  answeredTime?: string;
 }
 
 export interface CareStore {
@@ -236,6 +282,15 @@ export interface CareStore {
   /** Inclusive date range, family-local YYYY-MM-DD */
   listVoiceChecks(familyId: string, fromDate: string, toDate: string): Promise<VoiceCheck[]>;
   addVoiceCheck(check: VoiceCheck): Promise<void>;
+  addActivity(activity: Activity): Promise<void>;
+  /** Inclusive date range, family-local YYYY-MM-DD */
+  listActivity(familyId: string, fromDate: string, toDate: string): Promise<Activity[]>;
+  getCheckInSettings(familyId: string): Promise<CheckInSettings | undefined>;
+  setCheckInSettings(settings: CheckInSettings): Promise<void>;
+  /** Inclusive date range, family-local YYYY-MM-DD */
+  listCheckIns(familyId: string, fromDate: string, toDate: string): Promise<CheckIn[]>;
+  /** Adds or replaces the check-in with the same id */
+  saveCheckIn(checkIn: CheckIn): Promise<void>;
   addMessage(message: FamilyMessage): Promise<void>;
   /** Newest first */
   listMessages(familyId: string, limit?: number): Promise<FamilyMessage[]>;

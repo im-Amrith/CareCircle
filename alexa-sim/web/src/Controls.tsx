@@ -93,6 +93,8 @@ interface BarProps {
   /** Rose can ask for her reminder now; it also comes by itself after a quiet spell. */
   onRemind?: () => void;
   remindHint?: string;
+  /** Demo only: move the clock forward 30 minutes, or to tomorrow morning */
+  onSkip?: (by: { minutes: number } | { to: string }) => void;
   inboxCount: number;
   onInbox: () => void;
   /** The simulated voice match for the next request on this device */
@@ -164,7 +166,7 @@ const VOICES: { id: VoiceMatch; label: string; hint: string }[] = [
   { id: 'unknown', label: 'Unknown', hint: 'An unrecognised voice: changes are refused and noted for the family' }
 ];
 
-function MoreMenu({ profile, lang, busy, device, onDevice, layout, onLayout, muted, onMute, onReset, onLanguage, prefs, onPrefs, onRemind, remindHint, inboxCount, onInbox, voice, onVoice }: BarProps) {
+function MoreMenu({ profile, lang, busy, device, onDevice, layout, onLayout, muted, onMute, onReset, onLanguage, prefs, onPrefs, onRemind, remindHint, onSkip, inboxCount, onInbox, voice, onVoice }: BarProps) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -240,6 +242,16 @@ function MoreMenu({ profile, lang, busy, device, onDevice, layout, onLayout, mut
               <button type="button" className="menu-item" title={remindHint} onClick={act(onRemind)}>
                 Remind now
               </button>
+            )}
+            {onSkip && (
+              <>
+                <button type="button" className="menu-item" disabled={busy} title="Demo only: move the family's clock forward" onClick={act(() => onSkip({ minutes: 30 }))}>
+                  Skip ahead 30 min
+                </button>
+                <button type="button" className="menu-item" disabled={busy} title="Demo only: jump to the next 8:30 am, e.g. a morning nobody has heard from Rose yet" onClick={act(() => onSkip({ to: '08:30' }))}>
+                  Skip to the next 8:30 am
+                </button>
+              </>
             )}
             {inboxCount > 0 && (
               <button type="button" className="menu-item" onClick={act(onInbox)}>

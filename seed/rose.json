@@ -74,6 +74,7 @@
     "days": 14,
     "loggedBy": "rose",
     "minutesAfterSlot": [5, 40],
+    "lateMornings": [{ "dayOffset": -3, "minutes": 75 }],
     "missed": [
       { "dayOffset": -3, "medicationId": "med-amlodipine", "slot": "evening" },
       { "dayOffset": -9, "medicationId": "med-atorvastatin", "slot": "night" }

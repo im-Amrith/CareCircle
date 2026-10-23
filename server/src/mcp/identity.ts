@@ -33,13 +33,15 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   get_care_status: 'read',
   list_medications: 'read',
   check_refills: 'read',
+  get_morning_rhythm: 'read',
   log_medication: 'change',
   log_wellbeing: 'change',
   request_refill: 'change',
   coordinate_appointment: 'change',
   set_language: 'change',
   set_care_preference: 'change',
-  send_daily_summary: 'change'
+  send_daily_summary: 'change',
+  set_check_ins: 'change'
 };
 
 export function toolKind(name: string): ToolKind {
@@ -113,6 +115,8 @@ export async function describeAttempt(deps: Deps, caller: Caller, tool: string, 
       return `change ${name}'s care preferences`;
     case 'send_daily_summary':
       return `send the family summary`;
+    case 'set_check_ins':
+      return args.action === 'pause' ? `pause ${name}'s morning check-ins` : `change ${name}'s morning check-ins`;
     default:
       return `change ${name}'s care plan`;
   }

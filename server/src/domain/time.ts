@@ -120,3 +120,9 @@ export function spokenDate(date: string, today: string): string {
   const month = dt.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
   return diff > 1 && diff < 7 ? weekday : `${weekday}, ${month} ${d}`;
 }
+
+/** "Sunday" for a YYYY-MM-DD date. */
+export function weekdayName(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+}

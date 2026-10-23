@@ -420,6 +420,27 @@ happens, not reconstructed at the end.
 
 ---
 
+## FL-19: An MCP server has no way to start a conversation on the device
+
+- **Date:** 2026-10-22
+- **Area:** MCP 2025-11-25 and the Alexa+ MCP integration
+- **Task attempted:** Morning check-ins: when Rose's morning goes quiet, her Echo should ask how
+  she is, and Sam's and Maya's devices should tell them if she doesn't answer.
+- **Steps taken:** Looked for a server-initiated message a host would speak or show without a
+  user turn: notifications, sampling, elicitation outside a request.
+- **Expected:** A way for a server to say "announce this to this user" that the host turns into a
+  proactive notification, as Alexa does for its own reminders.
+- **Actual:** Nothing for this. Elicitation and sampling only exist inside a request. The closest
+  is `notifications/resources/updated` on a subscribed resource, which tells the host something
+  changed but not that it should be said aloud, to whom, or how urgently. Resource subscriptions
+  are also on their way out (FL-12).
+- **Severity:** Major
+- **Workaround:** Check-ins go into the subscribed `today` resource as alerts with a stable id and
+  a `kind`, and the simulator decides to announce new ones. A real Alexa+ device would need its
+  own rule for this.
+- **Suggestion:** A proactive-notification capability for MCP servers (target user, text,
+  urgency, expiry), with the host and the user in control of whether and when it is spoken.
+
 ## Feature requests
 
 | Request | Why it matters to CareCircle | Priority |
@@ -428,6 +449,7 @@ happens, not reconstructed at the end.
 | Published list of MCP features the Alexa+ client supports (elicitation modes, Tasks, resources, prompts) | Avoids building features Alexa+ will ignore | Important |
 | TypeScript examples for MCP servers on AgentCore Runtime | MCP Apps tooling is TypeScript-first | Important |
 | Clear credit eligibility per Bedrock model for hackathons | Prevents unexpected Marketplace charges | Important |
+| Proactive notifications from MCP servers to Alexa+ devices (FL-19) | Morning check-ins and safety alerts need the device to speak first | Critical |
 | Alexa+ passes the recognised voice profile and a match confidence to MCP servers | Lets a shared kitchen device tell Rose from a visitor before logging a dose. CareCircle simulates this today | Important |
 
 ---
