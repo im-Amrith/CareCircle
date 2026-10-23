@@ -115,6 +115,9 @@ describe('morning check-in, end to end', () => {
     expect(said(await call(sam, 'get_morning_rhythm'))).toMatch(/^Rose answered my check-in at 9:25 am\./);
     expect(await runCheckIn(srv.deps, familyId)).toBe('none');
 
+    // Rose asking about her morning afterwards hears a thank-you.
+    expect(said(await call(rose, 'get_morning_rhythm'))).toBe("Thanks, Rose. I've let the family know you're okay.");
+
     // The evening summary mentions the morning.
     const summary = await call(sam, 'send_daily_summary');
     expect(summary.structuredContent?.text).toContain('Morning: Rose was quiet; CareCircle checked in at 8:50 am and told the family at 9:20 am. Rose answered at 9:25 am.');
@@ -179,5 +182,19 @@ describe('morning check-in, end to end', () => {
     const next = await fetch(`${base}/dev/clock?to=08:30`, { method: 'POST' });
     expect(await next.json()).toEqual({ now: '2026-10-11T03:00:00.000Z' });
     expect((await fetch(`${base}/dev/clock?to=8am`, { method: 'POST' })).status).toBe(400);
+  });
+});
+
+describe('answering a check-in with any question', () => {
+  it("counts before the tool runs, so Rose's own question already answers it", async () => {
+    const srv = await startServer(HALF_SEVEN_IST);
+    srv.deps.clock.advance!(80 * 60_000); // 08:50
+    expect(await runCheckIn(srv.deps, 'fam-rose')).toBe('asked');
+    srv.deps.clock.advance!(30 * 60_000); // 09:20
+    expect(await runCheckIn(srv.deps, 'fam-rose')).toBe('family_told');
+    const rose = await connect(srv.url, 'rose');
+    expect(said(await call(rose, 'get_morning_rhythm'))).toBe("Thanks, Rose. I've let the family know you're okay.");
+    await rose.close();
+    await srv.stop();
   });
 });

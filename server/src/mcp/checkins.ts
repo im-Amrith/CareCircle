@@ -112,7 +112,11 @@ export function rhythmSpeech(r: Rhythm, caller: Caller): string {
   let today: string;
   if (r.firstToday) {
     today = you ? `You were up and about at ${spokenTime(r.firstToday)} this morning${vsUsual(r.firstToday, r.usual)}.` : `Yes, ${name} was up and about at ${spokenTime(r.firstToday)} this morning${vsUsual(r.firstToday, r.usual)}.`;
-    if (r.checkIn?.answeredTime) today = `${name === 'you' ? 'You' : name} answered my check-in at ${spokenTime(r.checkIn.answeredTime)}.`;
+    if (r.checkIn?.answeredTime) {
+      // Rose answering her own check-in hears a thank-you, not a report about herself.
+      if (you) return r.checkIn.familyToldAt ? `Thanks, ${caller.recipient.name}. I've let the family know you're okay.` : `Thanks, ${caller.recipient.name}. Glad to hear from you this morning.`;
+      today = `${name} answered my check-in at ${spokenTime(r.checkIn.answeredTime)}.`;
+    }
   } else if (r.checkIn?.stage === 'family_told') {
     today = `I haven't heard from ${name} yet this morning. I checked in at ${spokenTime(r.checkIn.askedTime)} with no answer, and told the family at ${spokenTime(r.checkIn.familyToldTime!)}.`;
   } else if (r.checkIn) {
@@ -228,25 +232,27 @@ export function installActivityTracker(server: McpServer, deps: Deps): void {
   const toolsCall = handlers.get('tools/call');
   if (!toolsCall) throw new Error('installActivityTracker: register tools first');
   handlers.set('tools/call', async (request, ctx) => {
-    const result = await toolsCall(request, ctx);
-    if (speakerFrom(ctx).confidence !== 'high' || result?.isError) return result;
-    try {
-      const caller = await resolveCaller(ctx, deps);
-      if (caller.isRecipient) {
-        await deps.store.addActivity({
-          familyId: caller.family.id,
-          memberId: caller.member.id,
-          at: caller.now.toISOString(),
-          date: caller.local.date,
-          time: caller.local.time,
-          via: String(request.params?.name ?? '')
-        });
-        await runCheckIn(deps, caller.family.id);
+    // Noted before the tool runs, so whatever she asks ("Is anyone coming today?") already
+    // counts as answering an open check-in, and the reply can say so.
+    if (speakerFrom(ctx).confidence === 'high') {
+      try {
+        const caller = await resolveCaller(ctx, deps);
+        if (caller.isRecipient) {
+          await deps.store.addActivity({
+            familyId: caller.family.id,
+            memberId: caller.member.id,
+            at: caller.now.toISOString(),
+            date: caller.local.date,
+            time: caller.local.time,
+            via: String(request.params?.name ?? '')
+          });
+          await runCheckIn(deps, caller.family.id);
+        }
+      } catch (err) {
+        console.warn('[carecircle] could not note activity', err);
       }
-    } catch (err) {
-      console.warn('[carecircle] could not note activity', err);
     }
-    return result;
+    return toolsCall(request, ctx);
   });
 }
 
